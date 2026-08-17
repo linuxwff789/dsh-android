@@ -90,6 +90,8 @@ public final class DshSetup {
         File rootfs = rootfsDir(context);
         rootfs.mkdirs();
         File filesDsh = filesDsh(context);
+        File cacheDir = new File(filesDsh, "cache");
+        cacheDir.mkdirs();
         String mirror = System.getProperty("dsh.mirror", "http://mirrors.tuna.tsinghua.edu.cn/debian");
 
         ProcessBuilder pb = new ProcessBuilder(
@@ -106,7 +108,7 @@ public final class DshSetup {
         e.put("DSH_LD_LIBRARY_PATH", new File(context.getFilesDir(), LIB_DIR).getAbsolutePath());
         e.put("DSH_PKGLIST", new File(filesDsh, "pkglist.txt").getAbsolutePath());
         e.put("DSH_MIRROR", mirror);
-        e.put("PROOT_TMP_DIR", new File(filesDsh, "cache").getAbsolutePath());
+        e.put("PROOT_TMP_DIR", cacheDir.getAbsolutePath());
         e.remove("LD_PRELOAD");
         pb.redirectErrorStream(true);
 
