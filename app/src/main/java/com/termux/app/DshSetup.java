@@ -7,18 +7,23 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.util.Arrays;
+import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
  * First-run deployment of the dsh-in-proot runtime.
  *
- * <p>Two stages:
- * 1. deployBase() — extract the small bundled base rootfs (offline) and
- *    widen its permissions.
- * 2. runInstaller() — boot the container with proot and run install.sh
- *    ONLINE (China mirrors: TUNA apt + npmmirror node/npm), which installs
- *    node + deepseek-harness and writes /opt/start-dsh.sh.
- *
+ * <p>Builds a CLEAN Debian minbase on-device (no bundled/termux-path rootfs):
+ * <ol>
+ *   <li>deployBase() — run bundled {@code bootstrap.sh} (busybox) which
+ *       downloads the essential .debs from TUNA and unpacks them with
+ *       busybox ar+tar, then registers them via dpkg under proot. Produces a
+ *       rootfs with NO termux paths baked in.</li>
+ *   <li>runInstaller() — boot the container with proot and run install.sh
+ *       ONLINE (TUNA apt + npmmirror), installing node + deepseek-harness and
+ *       writing /opt/start-dsh.sh.</li>
+ * </ol>
  * All operations idempotent.
  */
 public final class DshSetup {
@@ -33,7 +38,7 @@ public final class DshSetup {
 
     private DshSetup() {}
 
-    /** Base rootfs extracted at least once. */
+    /** Clean Debian rootfs bootstrapped at least once. */
     public static boolean isBaseExtracted(Context context) {
         return new File(context.getFilesDir(), BASE_MARKER).exists();
     }
@@ -43,7 +48,7 @@ public final class DshSetup {
         return new File(rootfsDir(context), "opt/.dsh-installed").exists();
     }
 
-    /** Resolves the real rootfs dir (bare base rootfs: etc/ at top). */
+    /** Resolves the real rootfs dir (clean minbase: etc/ at top). */
     public static File rootfsDir(Context context) {
         File dir = new File(context.getFilesDir(), ROOTFS_DIR);
         File inner = new File(dir, "rootfs");
@@ -52,7 +57,7 @@ public final class DshSetup {
     }
 
     /**
-     * Copies bundled binaries/libs + install script + base archive from
+     * Copies bundled binaries/libs + bootstrap.sh + pkglist + install.sh from
      * assets into filesDir/dsh. Cheap, idempotent.
      */
     public static void ensureBinaries(Context context) {
@@ -70,45 +75,58 @@ public final class DshSetup {
         for (String name : libs) {
             extractAsset(context, "opt/dsh/lib/" + name, new File(libDir, name), false);
         }
-        // installer script + small bundled base
+        extractAsset(context, "opt/dsh/bootstrap.sh", new File(filesDsh(context), "bootstrap.sh"), true);
+        extractAsset(context, "opt/dsh/pkglist.txt", new File(filesDsh(context), "pkglist.txt"), false);
         extractAsset(context, "opt/dsh/install.sh", new File(filesDsh(context), "install.sh"), true);
-        extractAsset(context, "opt/dsh/base.tar.xz", new File(filesDsh(context), "base.tar.xz"), false);
     }
 
-    /** Stage 1: extract the bundled minimal base rootfs (offline). */
+    /**
+     * Stage 1: bootstrap a clean Debian minbase from TUNA into the rootfs
+     * (download + busybox-unpack + dpkg-finalize). Blocking.
+     */
     public static synchronized boolean deployBase(Context context) {
-        File rootfs = rootfsDir(context);
-        if (rootfs.exists()) widenPermissions(context, rootfs);
         if (isBaseExtracted(context)) return validateBase(context);
 
+        File rootfs = rootfsDir(context);
         rootfs.mkdirs();
-        File archive = new File(filesDsh(context), "base.tar.xz");
-        if (!archive.exists() || archive.length() == 0) {
-            Log.e(LOG_TAG, "base archive missing");
+        File filesDsh = filesDsh(context);
+        String mirror = System.getProperty("dsh.mirror", "http://mirrors.tuna.tsinghua.edu.cn/debian");
+
+        ProcessBuilder pb = new ProcessBuilder(
+                new File(context.getFilesDir(), BIN_DIR + "/busybox").getAbsolutePath(),
+                "sh", new File(filesDsh, "bootstrap.sh").getAbsolutePath(), rootfs.getAbsolutePath(), "all"
+        );
+        Map<String, String> e = pb.environment();
+        e.put("PATH", new File(context.getFilesDir(), BIN_DIR).getAbsolutePath() + ":/system/bin");
+        e.put("LD_LIBRARY_PATH", new File(context.getFilesDir(), LIB_DIR).getAbsolutePath());
+        e.put("TMPDIR", "/tmp");
+        e.put("HOME", "/root");
+        e.put("DSH_BUSYBOX", new File(context.getFilesDir(), BIN_DIR + "/busybox").getAbsolutePath());
+        e.put("DSH_PROOT", new File(context.getFilesDir(), BIN_DIR + "/proot").getAbsolutePath());
+        e.put("DSH_LD_LIBRARY_PATH", new File(context.getFilesDir(), LIB_DIR).getAbsolutePath());
+        e.put("DSH_PKGLIST", new File(filesDsh, "pkglist.txt").getAbsolutePath());
+        e.put("DSH_MIRROR", mirror);
+        e.put("PROOT_TMP_DIR", new File(filesDsh, "cache").getAbsolutePath());
+        e.remove("LD_PRELOAD");
+        pb.redirectErrorStream(true);
+
+        File log = new File(filesDsh, "bootstrap.log");
+        long rc = runProcess(pb, log, 60, TimeUnit.MINUTES);
+        if (rc != 0) {
+            Log.e(LOG_TAG, "bootstrap failed rc=" + rc);
             return false;
         }
-
-        if (!runShell(context, "busybox tar -xJf " + quote(archive.getAbsolutePath())
-                + " -C " + quote(rootfs.getAbsolutePath()))) {
-            Log.e(LOG_TAG, "base extraction failed");
+        if (!validateBase(context)) {
+            Log.e(LOG_TAG, "bootstrap invalid (no /bin/sh)");
             return false;
         }
-        widenPermissions(context, rootfs);
-
-        // container DNS + hosts
-        writeFile(new File(rootfsDir(context), "etc/resolv.conf"),
-                "nameserver 223.5.5.5\nnameserver 8.8.8.8\n");
+        // container DNS + hosts (bootstrap already wrote resolv.conf; ensure hosts)
         File hosts = new File(rootfsDir(context), "etc/hosts");
         if (!hosts.exists()) {
             writeFile(hosts, "127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n");
         }
-
-        if (!validateBase(context)) {
-            Log.e(LOG_TAG, "base invalid (no /bin/sh or install.sh target)");
-            return false;
-        }
         touch(context, BASE_MARKER);
-        Log.i(LOG_TAG, "base deployed");
+        Log.i(LOG_TAG, "clean Debian base bootstrapped");
         return true;
     }
 
@@ -119,14 +137,12 @@ public final class DshSetup {
             Log.e(LOG_TAG, "install.sh missing");
             return -1;
         }
-        // place the installer inside the container (opt/ may not exist in minbase)
-        File guestInstaller = new File(rootfsDir(context), "opt/install-dsh.sh");
+        File rootfs = rootfsDir(context);
+        // place the installer inside the container
+        File guestInstaller = new File(rootfs, "opt/install-dsh.sh");
         guestInstaller.getParentFile().mkdirs();
         copyFile(script, guestInstaller, true);
-        // also drop the base archive out of the container path (not needed after deploy)
-        new File(filesDsh(context), "base.tar.xz").delete();
 
-        File rootfs = rootfsDir(context);
         File binDir = new File(context.getFilesDir(), BIN_DIR);
         File libDir = new File(context.getFilesDir(), LIB_DIR);
         File cacheDir = new File(filesDsh(context), "cache");
@@ -146,19 +162,31 @@ public final class DshSetup {
                 "--bind=/dev/urandom:/dev/random",
                 "/bin/sh", "/opt/install-dsh.sh"
         );
-        pb.environment().put("PATH", binDir.getAbsolutePath() + ":/system/bin");
-        pb.environment().put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
-        pb.environment().put("HOME", "/root");
-        pb.environment().put("TMPDIR", "/tmp");
-        // Termux-built proot hardcodes its temp dir to
-        // /data/data/com.termux/files/usr/tmp which this standalone app cannot
-        // access (EACCES -> proot aborts). Point it at our own writable dir.
-        pb.environment().put("PROOT_TMP_DIR", cacheDir.getAbsolutePath());
-        pb.environment().remove("LD_PRELOAD");
+        Map<String, String> e = pb.environment();
+        e.put("PATH", binDir.getAbsolutePath() + ":/system/bin");
+        e.put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
+        e.put("HOME", "/root");
+        e.put("TMPDIR", "/tmp");
+        e.put("PROOT_TMP_DIR", cacheDir.getAbsolutePath());
+        e.remove("LD_PRELOAD");
         pb.redirectErrorStream(true);
 
         File log = new File(filesDsh(context), "install.log");
+        long rc = runProcess(pb, log, 45, TimeUnit.MINUTES);
+        if (rc == 0) Log.i(LOG_TAG, "install.sh finished cleanly");
+        return rc;
+    }
+
+    private static boolean validateBase(Context context) {
+        File r = rootfsDir(context);
+        return new File(r, "bin/sh").exists() || new File(r, "usr/bin/sh").exists();
+    }
+
+    /** Runs a process, draining output into {@code log}. Returns exit code (or negative on error/timeout). */
+    private static long runProcess(ProcessBuilder pb, File log, long timeout, TimeUnit unit) {
         try {
+            File logDir = log.getParentFile();
+            if (logDir != null) logDir.mkdirs();
             Process p = pb.start();
             StringBuilder out = new StringBuilder();
             try (FileOutputStream fo = new FileOutputStream(log);
@@ -170,50 +198,17 @@ public final class DshSetup {
                     fo.write(buf, 0, n);
                 }
             }
-            if (!p.waitFor(45, TimeUnit.MINUTES)) {
+            if (!p.waitFor(timeout, unit)) {
                 p.destroyForcibly();
-                Log.e(LOG_TAG, "installer timed out");
+                Log.e(LOG_TAG, "process timed out: " + pb.command());
                 return -2;
             }
-            Log.i(LOG_TAG, "installer exited " + p.exitValue());
-            if (p.exitValue() != 0) {
-                Log.e(LOG_TAG, "install failed: " + out);
-                return p.exitValue();
-            }
-            return 0;
+            Log.i(LOG_TAG, "process exited " + p.exitValue() + ": " + pb.command().get(0));
+            if (p.exitValue() != 0) Log.e(LOG_TAG, Arrays.toString(pb.command().toArray()) + "\n" + out);
+            return p.exitValue();
         } catch (Exception e) {
-            Log.e(LOG_TAG, "installer error", e);
+            Log.e(LOG_TAG, "process error: " + pb.command(), e);
             return -1;
-        }
-    }
-
-    private static boolean validateBase(Context context) {
-        File r = rootfsDir(context);
-        return new File(r, "bin/sh").exists() || new File(r, "usr/bin/sh").exists();
-    }
-
-    /** Widens rootfs permissions to world-readable (u=rwx,go+rX). */
-    private static void widenPermissions(Context context, File rootfs) {
-        runShell(context, "busybox chmod -R u=rwx,go+rX " + quote(rootfs.getAbsolutePath()));
-    }
-
-    /** Runs a command via the bundled busybox with our lib path. */
-    private static boolean runShell(Context context, String inner) {
-        File libDir = new File(context.getFilesDir(), LIB_DIR);
-        File binDir = new File(context.getFilesDir(), BIN_DIR);
-        try {
-            ProcessBuilder pb = new ProcessBuilder(
-                    "/system/bin/sh", "-c",
-                    "LD_LIBRARY_PATH=" + quote(libDir.getAbsolutePath())
-                        + " " + new File(binDir, "busybox").getAbsolutePath() + " " + inner
-            );
-            pb.redirectErrorStream(true);
-            Process p = pb.start();
-            p.waitFor(120, TimeUnit.SECONDS);
-            return p.exitValue() == 0;
-        } catch (Exception e) {
-            Log.e(LOG_TAG, "runShell failed: " + inner, e);
-            return false;
         }
     }
 
@@ -236,8 +231,7 @@ public final class DshSetup {
     }
 
     private static void copyFile(File src, File dst, boolean executable) {
-        src = src; // keep signature
-        dst.getParentFile().mkdirs(); // ensure parent exists (e.g. rootfs/opt)
+        dst.getParentFile().mkdirs();
         try (InputStream in = new java.io.FileInputStream(src);
              OutputStream out = new FileOutputStream(dst)) {
             byte[] buf = new byte[65536];
@@ -245,7 +239,6 @@ public final class DshSetup {
             while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
         } catch (Exception e) {
             Log.e(LOG_TAG, "copy failed: " + dst, e);
-            return;
         }
         if (executable) dst.setExecutable(true, true);
     }
@@ -265,9 +258,5 @@ public final class DshSetup {
             if (!f.exists()) f.createNewFile();
         } catch (Exception ignored) {
         }
-    }
-
-    private static String quote(String s) {
-        return "'" + s.replace("'", "'\\''") + "'";
     }
 }

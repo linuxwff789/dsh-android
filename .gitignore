@@ -1,9 +1,6 @@
-# Runtime ships only the small (28MB) bundled Debian minbase — committed so CI can build it in.
-app/src/main/assets/opt/dsh/base.tar.xz
-
-# Any other tar.xz (large prebuilt rootfs etc.) is NOT committed.
+# Rootfs is bootstrapped on-device (bootstrap.sh + pkglist.txt), not bundled.
+# No *.tar.xz is committed (bootstrap downloads .debs directly from TUNA).
 *.tar.xz
-!app/src/main/assets/opt/dsh/base.tar.xz
 
 # Local build outputs
 dist/
