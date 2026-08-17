@@ -58,8 +58,11 @@ public final class DshSetup {
         binDir.mkdirs();
         libDir.mkdirs();
         String[] bins = {"proot", "xz", "busybox"};
-        String[] libs = {"liblzma.so.5.8.3", "libtalloc.so.2.4.3", "libandroid-shmem.so", "libandroid.so",
-                "libbusybox.so.1.38.0", "libandroid-selinux.so", "libpcre2-8.so"};
+        // NOTE: filenames must match the SONAMEs the binaries NEED (bionic
+        // linker matches exact filenames; no glibc-style version resolution).
+        String[] libs = {"libtalloc.so.2", "libandroid-shmem.so", "libandroid.so",
+                "liblzma.so.5", "libbusybox.so.1.38.0", "libandroid-selinux.so",
+                "libpcre2-8.so", "libtermux-exec.so"};
         for (String name : bins) {
             extractAsset(context, "opt/dsh/bin/" + name, new File(binDir, name), true);
         }
