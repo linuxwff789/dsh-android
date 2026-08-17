@@ -1,153 +1,99 @@
 package com.termux.app;
 
 import android.app.Activity;
-import android.app.AlertDialog;
-import android.content.Intent;
-import android.content.SharedPreferences;
 import android.os.Bundle;
-
-import com.termux.R;
-
+import android.os.Handler;
+import android.os.Looper;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.webkit.WebResourceError;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
-import android.widget.EditText;
-import android.widget.LinearLayout;
+
+import com.termux.R;
 
 /**
- * Launcher activity: full-screen WebView pointing at the dsh web UI on
- * http://127.0.0.1:3080. Starts the DshServerService on create so the
- * server keeps running while the app is in the foreground, and polls the
- * local URL until the container is up.
+ * Thin WebView client for the DSH server hosted by Termux.
+ *
+ * <p>Termux/proot-distro owns installation and the server process. This APK
+ * deliberately does not start a Service, deploy a rootfs, or execute proot.
  */
 public class DshWebActivity extends Activity {
-
     private static final String DSH_URL = "http://127.0.0.1:3080";
     private static final String WAIT_PAGE = "file:///android_asset/wait.html";
 
     private WebView webView;
-    private int attempt = 0;
-    private boolean userStopped = false;
+    private boolean destroyed;
+    private final Handler handler = new Handler(Looper.getMainLooper());
+    private final Runnable connect = () -> {
+        if (!destroyed) webView.loadUrl(DSH_URL);
+    };
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_dsh_web);
-
         webView = findViewById(R.id.dsh_webview);
-        WebSettings s = webView.getSettings();
-        s.setJavaScriptEnabled(true);
-        s.setDomStorageEnabled(true);
-        s.setDatabaseEnabled(true);
-        s.setCacheMode(WebSettings.LOAD_DEFAULT);
 
+        WebSettings settings = webView.getSettings();
+        settings.setJavaScriptEnabled(true);
+        settings.setDomStorageEnabled(true);
+        settings.setDatabaseEnabled(true);
+        settings.setCacheMode(WebSettings.LOAD_DEFAULT);
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public void onPageFinished(WebView view, String url) {
-                if (DSH_URL.equals(url)) {
-                    attempt = 0;
-                } else if (!userStopped && attempt < 120) {
-                    retryConnect();
-                }
+                if (DSH_URL.equals(url)) handler.removeCallbacks(connect);
             }
 
             @Override
-            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
-                if (userStopped) return;
-                if (attempt < 120) {
-                    retryConnect();
-                }
+            public void onReceivedError(WebView view, WebResourceRequest request,
+                                        WebResourceError error) {
+                if (request.isForMainFrame() && !destroyed) scheduleConnect();
             }
         });
 
-        startService(new Intent(this, DshServerService.class));
         webView.loadUrl(WAIT_PAGE);
-        retryConnect();
+        scheduleConnect();
     }
 
-    private void retryConnect() {
-        attempt++;
-        webView.postDelayed(() -> {
-            if (!userStopped && attempt < 120) {
-                webView.loadUrl(DSH_URL);
-            }
-        }, 1500);
+    private void scheduleConnect() {
+        handler.removeCallbacks(connect);
+        handler.postDelayed(connect, 1500);
+    }
+
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+        MenuItem refresh = menu.add("刷新");
+        refresh.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        refresh.setOnMenuItemClickListener(item -> {
+            webView.loadUrl(DSH_URL);
+            return true;
+        });
+        MenuItem help = menu.add("Termux 启动说明");
+        help.setShowAsAction(MenuItem.SHOW_AS_ACTION_NEVER);
+        help.setOnMenuItemClickListener(item -> {
+            webView.loadUrl(WAIT_PAGE);
+            scheduleConnect();
+            return true;
+        });
+        return true;
     }
 
     @Override
     public void onBackPressed() {
-        if (webView.canGoBack()) {
-            webView.goBack();
-        } else {
-            super.onBackPressed();
-        }
+        if (webView.canGoBack()) webView.goBack();
+        else super.onBackPressed();
     }
 
     @Override
     protected void onDestroy() {
-        userStopped = true;
+        destroyed = true;
+        handler.removeCallbacksAndMessages(null);
+        webView.stopLoading();
+        webView.destroy();
         super.onDestroy();
-        // Keep the server running in the background; user stops it via the
-        // notification or the menu.
-    }
-
-    private void showApiKeyDialog() {
-        SharedPreferences prefs = getSharedPreferences(DshServerService.PREFS, MODE_PRIVATE);
-        final EditText input = new EditText(this);
-        input.setSingleLine(true);
-        input.setText(prefs.getString(DshServerService.KEY_API_KEY, ""));
-        new AlertDialog.Builder(this)
-                .setTitle("DeepSeek API Key")
-                .setMessage("写入后注入容器环境变量，重启服务生效")
-                .setView(input)
-                .setPositiveButton("保存", (d, w) -> {
-                    prefs.edit().putString(DshServerService.KEY_API_KEY,
-                            input.getText().toString().trim()).apply();
-                    restartServer();
-                })
-                .setNegativeButton("取消", null)
-                .show();
-    }
-
-    private void toggleLanMode() {
-        SharedPreferences prefs = getSharedPreferences(DshServerService.PREFS, MODE_PRIVATE);
-        boolean lan = !prefs.getBoolean(DshServerService.KEY_LAN, false);
-        prefs.edit().putBoolean(DshServerService.KEY_LAN, lan).apply();
-        restartServer();
-        new AlertDialog.Builder(this)
-                .setMessage(lan
-                        ? "LAN 模式已开启：容器监听 0.0.0.0，局域网设备可访问（无鉴权，注意安全）"
-                        : "LAN 模式已关闭：仅本机 localhost 可访问")
-                .setPositiveButton("好", null)
-                .show();
-    }
-
-    private void restartServer() {
-        stopService(new Intent(this, DshServerService.class));
-        startService(new Intent(this, DshServerService.class));
-    }
-
-    @Override
-    public boolean onCreateOptionsMenu(android.view.Menu menu) {
-        menu.add("设置 API Key").setOnMenuItemClickListener(m -> {
-            showApiKeyDialog();
-            return true;
-        });
-        menu.add("切换 LAN 模式").setOnMenuItemClickListener(m -> {
-            toggleLanMode();
-            return true;
-        });
-        menu.add("重启服务").setOnMenuItemClickListener(m -> {
-            restartServer();
-            return true;
-        });
-        menu.add("停止服务").setOnMenuItemClickListener(m -> {
-            userStopped = true;
-            stopService(new Intent(this, DshServerService.class));
-            return true;
-        });
-        return super.onCreateOptionsMenu(menu);
     }
 }
