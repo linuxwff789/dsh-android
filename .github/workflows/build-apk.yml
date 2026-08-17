@@ -37,7 +37,17 @@ jobs:
           TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS: "0"
         run: |
           ls -la app/src/main/assets/opt/dsh/
-          ./gradlew assembleRelease
+          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee /tmp/gradle.log
+          exit ${PIPESTATUS[0]}
+
+      - name: Upload gradle log (diagnostic, always)
+        if: always()
+        uses: actions/upload-artifact@v6
+        with:
+          name: gradle-log
+          path: /tmp/gradle.log
+          if-no-files-found: ignore
+          retention-days: 7
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
