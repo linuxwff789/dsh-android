@@ -37,17 +37,20 @@ jobs:
           TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS: "0"
         run: |
           ls -la app/src/main/assets/opt/dsh/
-          ./gradlew assembleRelease --stacktrace --no-daemon 2>&1 | tee /tmp/gradle.log
-          exit ${PIPESTATUS[0]}
+          ./gradlew assembleRelease --no-daemon
 
-      - name: Upload gradle log (diagnostic, always)
-        if: always()
-        uses: actions/upload-artifact@v6
-        with:
-          name: gradle-log
-          path: /tmp/gradle.log
-          if-no-files-found: ignore
-          retention-days: 7
+      - name: Publish Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          TAG="dsh-nightly"
+          APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
+          # a stable release tag so users always have one fixed download link
+          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
+          gh release create "$TAG" "$APK" \
+            --title "DSH nightly (${{ github.sha }}) v0.118.0+dsh" \
+            --notes "Fixed-signature build. Stable download: https://github.com/linuxwff789/dsh-android/releases/latest"
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
