@@ -5,3 +5,7 @@ app/src/main/assets/opt/dsh/rootfs.tar.xz
 
 # Local build outputs
 dist/
+
+# keystore private material (only the .p12 is committed for CI signing)
+keystore/key.pem
+keystore/cert.pem

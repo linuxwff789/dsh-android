@@ -83,12 +83,14 @@ public final class DshSetup {
 
         try {
             File usrBin = new File(context.getFilesDir(), BIN_DIR);
+            // Use Android's system shell + toybox tar (always present); no
+            // termux bootstrap required.
             ProcessBuilder pb = new ProcessBuilder(
-                "sh", "-c",
+                "/system/bin/sh", "-c",
                 "LD_LIBRARY_PATH=" + quote(new File(context.getFilesDir(), LIB_DIR).getAbsolutePath())
                     + " " + quote(new File(usrBin, "xz").getAbsolutePath())
                     + " -dc " + quote(archive.getAbsolutePath())
-                    + " | tar -x -C " + quote(rootfs.getAbsolutePath())
+                    + " | /system/bin/toybox tar -x -C " + quote(rootfs.getAbsolutePath())
             );
             pb.redirectErrorStream(true);
             Process p = pb.start();

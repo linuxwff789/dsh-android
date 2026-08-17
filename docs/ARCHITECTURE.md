@@ -3,19 +3,24 @@
 目标：dsh（deepseek-harness）跑在 proot 容器里，通过 WebView/浏览器访问
 localhost:3080，打包成可离线分发的单 APK。
 
-## 包名决策（重要约束）
+## 包名决策（v2：独立应用，与 Termux 共存）
 
-**包名保留 com.termux，不重命名。** 原因：官方 bootstrap 二进制把
-/data/data/com.termux/files/usr 的 prefix 路径编译死在里面（shebang、
-动态链接路径），改名就要用 termux-packages 全量重编 bootstrap（数小时级
-构建），不划算。主流 Termux fork 同样保留包名。
+**applicationId = dev.lwff.dsh**，namespace 保留 com.termux（Java 类仍位于
+com.termux.app，AGP 的 R 类/Manifest 类解析依赖 namespace 不变量）。
+本 APK 与官方 Termux 可并排安装，互不覆盖、互不干扰。
+
+独立化的关键：
+- 完全不需要 termux bootstrap：宿主侧只需 sh + tar + xz + proot，全部来自
+  系统自带（/system/bin/sh + /system/bin/toybox）+ 内置资产（proot/xz/4 个 .so）
+- TermuxApplication 换成极简 DshApplication（不接 am-socket/prefix 机制）
+- sharedUserId 移除（不再和 Termux 家族共享 UID）
+- 稳定签名：keystore/dsh-release.p12（openssl 生成 PKCS12，已提交，
+  gradle debug signingConfig 指向它，CI 每轮构建同一签名，可无缝覆盖安装）
 
 含义：
-- 安装本 APK 会直接替换官方 Termux（数据目录一致，现有 ~/deepseek-harness
-  等环境原样保留，零迁移）——自用/自己分发都成立
-- 若将来要并排安装两个 Termux：需要完整的自建 bootstrap 构建链（termux-packages
-  上设置 PREFIX 编整套包），暂时不做
-- 改名路径是官方支持的（TermuxConstants 注释有完整清单），需要时照做即可
+- 容器/运行时/会话数据全在 dev.lwff.dsh 私有目录，卸载即净
+- 手机上原有的 Termux 及其 ~/deepseek-harness 环境原样保留，两者并存
+- 若日后想与 Termux 侧互通（共用 API key 等），是明确后续课题
 
 ## 分层
 

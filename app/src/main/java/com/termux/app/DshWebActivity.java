@@ -129,11 +129,6 @@ public class DshWebActivity extends Activity {
         startService(new Intent(this, DshServerService.class));
     }
 
-    private void openTerminal() {
-        Intent i = new Intent(this, com.termux.app.TermuxActivity.class);
-        startActivity(i);
-    }
-
     @Override
     public boolean onCreateOptionsMenu(android.view.Menu menu) {
         menu.add("设置 API Key").setOnMenuItemClickListener(m -> {
@@ -146,10 +141,6 @@ public class DshWebActivity extends Activity {
         });
         menu.add("重启服务").setOnMenuItemClickListener(m -> {
             restartServer();
-            return true;
-        });
-        menu.add("打开终端").setOnMenuItemClickListener(m -> {
-            openTerminal();
             return true;
         });
         menu.add("停止服务").setOnMenuItemClickListener(m -> {
