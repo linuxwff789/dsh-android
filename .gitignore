@@ -1,12 +1,15 @@
-# Old full-rootfs approach is deprecated; keep only the small bundled base.
-app/src/main/assets/opt/dsh/rootfs.tar.xz
+# Runtime ships only the small (28MB) bundled Debian minbase — committed so CI can build it in.
+app/src/main/assets/opt/dsh/base.tar.xz
 
-# Allow the small (28MB) bundled base — it is committed so CI can build it in.
+# Any other tar.xz (large prebuilt rootfs etc.) is NOT committed.
 *.tar.xz
 !app/src/main/assets/opt/dsh/base.tar.xz
 
 # Local build outputs
 dist/
+
+# CodeGraph index
+.codegraph/
 
 # keystore private material (only the .p12 is committed for CI signing)
 keystore/key.pem

@@ -79,6 +79,19 @@ android {
     }
 
     signingConfigs {
+        // Fixed release signing: the keystore is committed (keystore/dsh-release.p12)
+        // so every APK built (locally OR on CI) carries the same stable signature
+        // and can update-pav over previously installed builds. Passwords default to
+        // the committed dev values but can be overridden via env/CI secrets without
+        // changing the key itself.
+        def keystoreFile = file(System.getenv("DSH_KEYSTORE_FILE") ?: '../keystore/dsh-release.p12')
+        release {
+            storeFile keystoreFile
+            storeType 'PKCS12'
+            keyAlias System.getenv("DSH_KEY_ALIAS") ?: 'dsh'
+            storePassword System.getenv("DSH_STORE_PASSWORD") ?: 'dshdsh'
+            keyPassword System.getenv("DSH_KEY_PASSWORD") ?: 'dshdsh'
+        }
         debug {
             storeFile file('../keystore/dsh-release.p12')
             storeType 'PKCS12'
@@ -93,6 +106,7 @@ android {
             minifyEnabled true
             shrinkResources false // Reproducible builds
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            signingConfig signingConfigs.release
         }
 
         debug {

@@ -2,27 +2,22 @@ name: Build APK
 
 # Builds the DSH for Android APK (termux-app fork + dsh overlay).
 #
-# Triggers:
-#   - automatically after the "Build rootfs" workflow succeeds (it supplies
-#     the rootfs.tar.xz artifact that gets bundled into the APK assets)
-#   - manually via workflow_dispatch (rootfs_url input overrides the artifact)
+# No emulator/prebuilt rootfs step: the APK ships only the small bundled
+# base rootfs (assets/opt/dsh/base.tar.xz) + install-dsh.sh, and the
+# container bootstraps node + deepseek-harness ONLINE on first launch
+# (Tsinghua apt + npmmirror node/npm). Small runtime assets (proot/xz/libs)
+# are committed to the repo.
 #
-# Small runtime assets (proot/xz/libs) come from the repo; the rootfs archive
-# is downloaded from the triggering rootfs build artifact.
+# Trigger: manual workflow_dispatch, or push to main.
 on:
-  workflow_run:
-    workflows: [Build rootfs]
-    types: [completed]
   workflow_dispatch:
-    inputs:
-      rootfs_url:
-        description: "URL of dsh-rootfs.tar.xz (artifact download URL or release asset)"
-        required: false
+  push:
+    branches: [main]
+    paths: ["app/**", "scripts/**", "patches/**", ".github/workflows/build-apk.yml"]
 
 jobs:
   apk:
     runs-on: ubuntu-latest
-    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
     steps:
       - name: Checkout
         uses: actions/checkout@v6
@@ -39,13 +34,14 @@ jobs:
           TERMUX_PACKAGE_VARIANT: apt-android-7
           TERMUX_APP_VERSION_NAME: 0.118.0+dsh
           TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS: "0"
+          TERMUX_SPLIT_APKS_FOR_RELEASE_BUILDS: "0"
         run: |
           ls -la app/src/main/assets/opt/dsh/
-          ./gradlew assembleDebug
+          ./gradlew assembleRelease
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
         with:
           name: dsh-apk
-          path: app/build/outputs/apk/debug/*.apk
+          path: app/build/outputs/apk/release/*.apk
           retention-days: 14
