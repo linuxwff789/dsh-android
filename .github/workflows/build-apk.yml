@@ -1,0 +1,66 @@
+name: Build APK
+
+# Builds the DSH for Android APK (termux-app fork + dsh overlay).
+#
+# - Small runtime assets (proot/xz/libs) come from the repo.
+# - The large rootfs archive is downloaded from the rootfs build: run the
+#   "Build rootfs" workflow first, then pass its run number (or a release
+#   asset URL) via the rootfs_url input.
+on:
+  workflow_dispatch:
+    inputs:
+      rootfs_url:
+        description: "URL of dsh-rootfs.tar.xz (artifact download URL or release asset)"
+        required: true
+  push:
+    branches: [main]
+    paths: ["app/**", "scripts/**", "patches/**", ".github/workflows/build-apk.yml"]
+
+jobs:
+  apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup java 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Download rootfs asset
+        shell: bash
+        run: |
+          URL="${{ github.event.inputs.rootfs_url }}"
+          if [ -z "$URL" ]; then
+            # fall back to the latest successful rootfs-build artifact
+            RUN_ID="$(gh api repos/${{ github.repository }}/actions/workflows/build-rootfs.yml/runs \
+              --jq '.workflow_runs[] | select(.conclusion=="success") | .id' -q | head -1)"
+            URL="https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$RUN_ID/zip"
+            echo "using latest rootfs-build run: $RUN_ID"
+          fi
+          mkdir -p app/src/main/assets/opt/dsh
+          if [[ "$URL" == *.zip ]]; then
+            curl -fsSL -H "Authorization: Bearer ${{ github.token }}" "$URL" -o rootfs.zip
+            unzip -o rootfs.zip -d rootfs-pkg
+            cp rootfs-pkg/*.tar.xz app/src/main/assets/opt/dsh/rootfs.tar.xz
+          else
+            curl -fsSL "$URL" -o app/src/main/assets/opt/dsh/rootfs.tar.xz
+          fi
+          ls -la app/src/main/assets/opt/dsh/
+
+      - name: Build APKs
+        shell: bash {0}
+        env:
+          TERMUX_PACKAGE_VARIANT: apt-android-7
+          TERMUX_APP_VERSION_NAME: 0.118.0+dsh
+        run: |
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v6
+        with:
+          name: dsh-apk
+          path: app/build/outputs/apk/debug/*.apk
+          retention-days: 14

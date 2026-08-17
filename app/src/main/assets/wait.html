@@ -1,0 +1,26 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta http-equiv="refresh" content="3">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DSH 启动中</title>
+<style>
+  body { background: #111; color: #eee; font-family: sans-serif;
+         display: flex; align-items: center; justify-content: center;
+         height: 100vh; margin: 0; }
+  .box { text-align: center; }
+  .spinner { display: inline-block; width: 32px; height: 32px;
+             border: 4px solid #333; border-top-color: #4fc3f7;
+             border-radius: 50%; animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="spinner"></div>
+  <h2>DSH 服务启动中…</h2>
+  <p>首次启动需解压 rootfs（约 1-2 分钟），请稍候，本页会自动跳转</p>
+</div>
+</body>
+</html>

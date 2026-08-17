@@ -1,0 +1,7 @@
+# Large runtime assets are not committed to git; stage them locally or let CI
+# download them (see .github/workflows/build-apk.yml)
+app/src/main/assets/opt/dsh/rootfs.tar.xz
+*.tar.xz
+
+# Local build outputs
+dist/

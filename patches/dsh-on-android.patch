@@ -1,0 +1,53 @@
+diff --git a/apps/cli/src/profile-boot.ts b/apps/cli/src/profile-boot.ts
+index 19c4abb..6b54fce 100644
+--- a/apps/cli/src/profile-boot.ts
++++ b/apps/cli/src/profile-boot.ts
+@@ -14,7 +14,8 @@
+ import { writeFileSync } from 'node:fs'
+ import { join, resolve } from 'node:path'
+ import { fileURLToPath } from 'node:url'
+-import { FiberState, type Context } from '@deepseek-ai/cordis'
++import { FiberState } from '@deepseek-ai/cordis/src/fiber.ts'
++import type { Context } from '@deepseek-ai/cordis'
+ import type { PatchOptions } from '@deepseek-ai/cordis-plugin-include'
+ import type { EntryOptions } from '@deepseek-ai/cordis-plugin-loader'
+ import {
+diff --git a/packages/session/session-persistence-jsonl/src/index.ts b/packages/session/session-persistence-jsonl/src/index.ts
+index 5113746..efb533d 100644
+--- a/packages/session/session-persistence-jsonl/src/index.ts
++++ b/packages/session/session-persistence-jsonl/src/index.ts
+@@ -9,7 +9,7 @@
+ import { Context } from '@deepseek-ai/cordis'
+ import z from '@deepseek-ai/schemastery'
+ import { readdirSync } from 'node:fs'
+-import { open, mkdir, readFile, readdir, realpath, link, rm, stat, truncate } from 'node:fs/promises'
++import { open, mkdir, readFile, readdir, realpath, rename, rm, stat, truncate } from 'node:fs/promises'
+ import { dirname, join, resolve } from 'node:path'
+ import { performance } from 'node:perf_hooks'
+ import { scheduler } from 'node:timers/promises'
+@@ -544,17 +544,16 @@ export class JsonlSessionPersistence extends SessionPersistence implements Persi
+     // Publish via link()+unlink(), NOT rename(): link fails with EEXIST if the
+     // final path already exists, so two processes materializing the same id
+     // concurrently cannot clobber each other. rename() would silently overwrite.
+-    let linked = false
++    // Termux/Android patch: link(2) is denied by SELinux for untrusted_app
++    // (EACCES on any hard-link creation), so publish via rename() instead.
++    // Trade-off: loses the EEXIST clobber guard, acceptable for single-user.
+     try {
+-      await link(tmp, finalPath)
+-      linked = true
+-    } finally {
+-      // Remove an unpublished temp on failure. After publication, defer cleanup
+-      // until the directory entry is durable so cleanup cannot reject a live log.
+-      /* v8 ignore next -- link failure is the TOCTOU/IO race guarded above; not reachable in test */
+-      if (!linked) await rm(tmp, { force: true })
++      await rename(tmp, finalPath)
++    } catch (err) {
++      await rm(tmp, { force: true })
++      throw err
+     }
+-    // link() succeeded — the log is published. fsync the directory so the new
++    // rename() succeeded — the log is published. fsync the directory so the new
+     // entry survives a power loss: the new link is not crash-durable until the
+     // parent directory's metadata is synced.
+     await this.syncDirPosix(dir)
