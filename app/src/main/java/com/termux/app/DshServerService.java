@@ -64,14 +64,20 @@ public class DshServerService extends Service {
         while (running.get()) {
             try {
                 DshSetup.ensureBinaries(this);
-                DshSetup.deployRootfs(this);
             } catch (Throwable t) {
-                Log.e(LOG_TAG, "deploy failed", t);
+                Log.e(LOG_TAG, "ensureBinaries failed", t);
                 sleep(2000);
                 continue;
             }
-            if (!DshSetup.isRootfsDeployed(this)) {
-                Log.e(LOG_TAG, "rootfs not deployed, retrying");
+            if (!DshSetup.deployBase(this)) {
+                Log.e(LOG_TAG, "base not deployed, retrying");
+                sleep(3000);
+                continue;
+            }
+            if (!DshSetup.isDshInstalled(this)) {
+                Log.i(LOG_TAG, "dsh not installed — running online installer (China mirrors)");
+                long rc = DshSetup.runInstaller(this);
+                Log.i(LOG_TAG, "installer returned " + rc);
                 sleep(5000);
                 continue;
             }
@@ -129,7 +135,10 @@ public class DshServerService extends Service {
         pb.environment().put("PATH", binDir.getAbsolutePath() + ":/system/bin");
         pb.environment().put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
         pb.environment().put("HOME", "/root");
-        pb.environment().put("TMPDIR", cacheDir.getAbsolutePath());
+        // TMPDIR must live INSIDE the container: proot canonicalizes host
+        // paths through its virtual fs and falls back to its compiled-in
+        // termux default (unwritable here), which breaks its exec shim.
+        pb.environment().put("TMPDIR", "/tmp");
         pb.environment().remove("LD_PRELOAD");
         String apiKey = prefs.getString(KEY_API_KEY, null);
         if (apiKey != null && !apiKey.isEmpty()) {

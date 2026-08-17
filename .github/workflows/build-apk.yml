@@ -33,30 +33,6 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Download rootfs asset
-        shell: bash
-        run: |
-          set -euo pipefail
-          URL='${{ github.event.inputs.rootfs_url }}'
-          if [ -z "$URL" ]; then
-            RUN_ID="${{ github.event.workflow_run.id }}"
-            [ -n "$RUN_ID" ] || RUN_ID="$(gh api repos/${{ github.repository }}/actions/workflows/build-rootfs.yml/runs \
-                --jq '.workflow_runs[] | select(.conclusion=="success") | .id' | head -1)"
-            ART_ID="$(gh api repos/${{ github.repository }}/actions/runs/$RUN_ID/artifacts \
-                --jq '.artifacts[0].id')"
-            URL="https://api.github.com/repos/${{ github.repository }}/actions/artifacts/$ART_ID/zip"
-            echo "using rootfs artifact $ART_ID from run $RUN_ID"
-          fi
-          mkdir -p app/src/main/assets/opt/dsh
-          if [[ "$URL" == *.zip || "$URL" == */zip ]]; then
-            curl -fsSL -H "Authorization: Bearer ${{ github.token }}" "$URL" -o rootfs.zip
-            unzip -o rootfs.zip -d rootfs-pkg
-            cp rootfs-pkg/*.tar.xz app/src/main/assets/opt/dsh/rootfs.tar.xz
-          else
-            curl -fsSL "$URL" -o app/src/main/assets/opt/dsh/rootfs.tar.xz
-          fi
-          ls -la app/src/main/assets/opt/dsh/
-
       - name: Build APKs
         shell: bash {0}
         env:
@@ -64,6 +40,7 @@ jobs:
           TERMUX_APP_VERSION_NAME: 0.118.0+dsh
           TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS: "0"
         run: |
+          ls -la app/src/main/assets/opt/dsh/
           ./gradlew assembleDebug
 
       - name: Upload APK

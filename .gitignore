@@ -1,7 +1,9 @@
-# Large runtime assets are not committed to git; stage them locally or let CI
-# download them (see .github/workflows/build-apk.yml)
+# Old full-rootfs approach is deprecated; keep only the small bundled base.
 app/src/main/assets/opt/dsh/rootfs.tar.xz
+
+# Allow the small (28MB) bundled base — it is committed so CI can build it in.
 *.tar.xz
+!app/src/main/assets/opt/dsh/base.tar.xz
 
 # Local build outputs
 dist/
