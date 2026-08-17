@@ -62,6 +62,7 @@ jobs:
         env:
           TERMUX_PACKAGE_VARIANT: apt-android-7
           TERMUX_APP_VERSION_NAME: 0.118.0+dsh
+          TERMUX_SPLIT_APKS_FOR_DEBUG_BUILDS: "0"
         run: |
           ./gradlew assembleDebug
 
