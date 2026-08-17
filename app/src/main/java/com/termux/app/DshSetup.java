@@ -32,8 +32,16 @@ public final class DshSetup {
         return new File(context.getFilesDir(), ROOTFS_MARKER).exists();
     }
 
+    /**
+     * Resolves the real rootfs directory. The bundled archive may be a bare
+     * rootfs (etc/ at top) or a proot-distro container-dir layout
+     * (real rootfs under rootfs/). Detect by probing for etc/.
+     */
     public static File rootfsDir(Context context) {
-        return new File(context.getFilesDir(), ROOTFS_DIR);
+        File dir = new File(context.getFilesDir(), ROOTFS_DIR);
+        File inner = new File(dir, "rootfs");
+        if (new File(inner, "etc").isDirectory()) return inner;
+        return dir;
     }
 
     public static File etcResolvConf(Context context) {
@@ -49,8 +57,9 @@ public final class DshSetup {
         File libDir = new File(context.getFilesDir(), LIB_DIR);
         binDir.mkdirs();
         libDir.mkdirs();
-        String[] bins = {"proot", "xz"};
-        String[] libs = {"liblzma.so.5.8.3", "libtalloc.so.2.4.3", "libandroid-shmem.so", "libandroid.so"};
+        String[] bins = {"proot", "xz", "busybox"};
+        String[] libs = {"liblzma.so.5.8.3", "libtalloc.so.2.4.3", "libandroid-shmem.so", "libandroid.so",
+                "libbusybox.so.1.38.0", "libandroid-selinux.so", "libpcre2-8.so"};
         for (String name : bins) {
             extractAsset(context, "opt/dsh/bin/" + name, new File(binDir, name), true);
         }
@@ -83,24 +92,33 @@ public final class DshSetup {
 
         try {
             File usrBin = new File(context.getFilesDir(), BIN_DIR);
-            // Use Android's system shell + toybox tar (always present); no
-            // termux bootstrap required.
+            // Bundled busybox tar (has xz support, -J) — no dependency on the
+            // termux bootstrap or Android's system toybox (SELinux blocks app
+            // exec of system binaries like toybox).
             ProcessBuilder pb = new ProcessBuilder(
                 "/system/bin/sh", "-c",
                 "LD_LIBRARY_PATH=" + quote(new File(context.getFilesDir(), LIB_DIR).getAbsolutePath())
-                    + " " + quote(new File(usrBin, "xz").getAbsolutePath())
-                    + " -dc " + quote(archive.getAbsolutePath())
-                    + " | /system/bin/toybox tar -x -C " + quote(rootfs.getAbsolutePath())
+                    + " " + quote(new File(usrBin, "busybox").getAbsolutePath())
+                    + " tar -xJf " + quote(archive.getAbsolutePath())
+                    + " -C " + quote(rootfs.getAbsolutePath())
             );
             pb.redirectErrorStream(true);
             Process p = pb.start();
-            if (!p.waitFor(30, java.util.concurrent.TimeUnit.MINUTES)) {
+            StringBuilder out = new StringBuilder();
+            try (java.io.InputStream is = p.getInputStream()) {
+                byte[] buf = new byte[8192];
+                int n;
+                while ((n = is.read(buf)) != -1) out.append(new String(buf, 0, n, "UTF-8"));
+            } catch (Exception e) {
+                Log.e(LOG_TAG, "extract pipe error", e);
+            }
+            if (!p.waitFor(10, java.util.concurrent.TimeUnit.MINUTES)) {
                 p.destroyForcibly();
                 Log.e(LOG_TAG, "rootfs extraction timed out");
                 return false;
             }
             if (p.exitValue() != 0) {
-                Log.e(LOG_TAG, "rootfs extraction failed with exit " + p.exitValue());
+                Log.e(LOG_TAG, "rootfs extraction failed exit=" + p.exitValue() + "\n" + out);
                 return false;
             }
         } catch (Exception e) {
@@ -112,9 +130,15 @@ public final class DshSetup {
         // is not visible inside the container.
         writeFile(etcResolvConf(context), "nameserver 223.5.5.5\nnameserver 8.8.8.8\n");
         // hosts with localhost mapping, mirrors the proot-distro behaviour
-        File hosts = new File(rootfs, "etc/hosts");
+        File hosts = new File(rootfsDir(context), "etc/hosts");
         if (!hosts.exists()) {
             writeFile(hosts, "127.0.0.1 localhost\n::1 localhost ip6-localhost ip6-loopback\n");
+        }
+
+        // sanity: the resolved rootfs must contain the dsh entrypoint
+        if (!new File(rootfsDir(context), "opt/start-dsh.sh").exists()) {
+            Log.e(LOG_TAG, "resolved rootfs has no /opt/start-dsh.sh");
+            return false;
         }
 
         new File(context.getFilesDir(), ROOTFS_MARKER).delete();
