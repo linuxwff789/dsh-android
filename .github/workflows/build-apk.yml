@@ -18,6 +18,8 @@ on:
 jobs:
   apk:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write   # needed to create/delete the dsh-nightly release
     steps:
       - name: Checkout
         uses: actions/checkout@v6
