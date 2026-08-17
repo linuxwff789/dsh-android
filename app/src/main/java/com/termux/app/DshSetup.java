@@ -119,8 +119,9 @@ public final class DshSetup {
             Log.e(LOG_TAG, "install.sh missing");
             return -1;
         }
-        // place the installer inside the container
+        // place the installer inside the container (opt/ may not exist in minbase)
         File guestInstaller = new File(rootfsDir(context), "opt/install-dsh.sh");
+        guestInstaller.getParentFile().mkdirs();
         copyFile(script, guestInstaller, true);
         // also drop the base archive out of the container path (not needed after deploy)
         new File(filesDsh(context), "base.tar.xz").delete();
@@ -149,6 +150,10 @@ public final class DshSetup {
         pb.environment().put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
         pb.environment().put("HOME", "/root");
         pb.environment().put("TMPDIR", "/tmp");
+        // Termux-built proot hardcodes its temp dir to
+        // /data/data/com.termux/files/usr/tmp which this standalone app cannot
+        // access (EACCES -> proot aborts). Point it at our own writable dir.
+        pb.environment().put("PROOT_TMP_DIR", cacheDir.getAbsolutePath());
         pb.environment().remove("LD_PRELOAD");
         pb.redirectErrorStream(true);
 
@@ -232,6 +237,7 @@ public final class DshSetup {
 
     private static void copyFile(File src, File dst, boolean executable) {
         src = src; // keep signature
+        dst.getParentFile().mkdirs(); // ensure parent exists (e.g. rootfs/opt)
         try (InputStream in = new java.io.FileInputStream(src);
              OutputStream out = new FileOutputStream(dst)) {
             byte[] buf = new byte[65536];

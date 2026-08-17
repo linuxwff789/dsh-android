@@ -116,7 +116,6 @@ public class DshServerService extends Service {
         String kernelRelease = "\\Linux\\localhost\\6.17.0-PRoot-Distro"
                 + "\\#1 SMP PREEMPT_DYNAMIC Fri, 10 Oct 2025 00:00:00 +0000"
                 + "\\aarch64\\localdomain\\-1\\";
-
         ProcessBuilder pb = new ProcessBuilder(
                 new File(binDir, "proot").getAbsolutePath(),
                 "--link2symlink",
@@ -139,6 +138,11 @@ public class DshServerService extends Service {
         // paths through its virtual fs and falls back to its compiled-in
         // termux default (unwritable here), which breaks its exec shim.
         pb.environment().put("TMPDIR", "/tmp");
+        // ...but that default (/data/data/com.termux/files/usr/tmp/) is ALSO
+        // used for proot's internal workspace before the guest sees TMPDIR,
+        // and this standalone app has no access to it. Point PROOT_TMP_DIR at
+        // our own writable cache so proot can start at all.
+        pb.environment().put("PROOT_TMP_DIR", cacheDir.getAbsolutePath());
         pb.environment().remove("LD_PRELOAD");
         String apiKey = prefs.getString(KEY_API_KEY, null);
         if (apiKey != null && !apiKey.isEmpty()) {
