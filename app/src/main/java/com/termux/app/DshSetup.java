@@ -78,8 +78,13 @@ public final class DshSetup {
      * Returns true on success.
      */
     public static synchronized boolean deployRootfs(Context context) {
-        if (isRootfsDeployed(context)) return true;
         File rootfs = rootfsDir(context);
+        // The archived rootfs carries termux-UID ownership with 0700 modes.
+        // proot -0 maps the app uid to guest root, which then cannot read
+        // those 0700 files (owner is an unrelated guest uid) — the loader
+        // reports "interpreter not found". Widen every run (idempotent).
+        if (rootfs.exists()) widenPermissions(context, rootfs);
+        if (isRootfsDeployed(context)) return validateRootfs(context);
         rootfs.mkdirs();
 
         File archive = new File(context.getFilesDir(), "dsh/rootfs.tar.xz");
@@ -124,6 +129,8 @@ public final class DshSetup {
                 Log.e(LOG_TAG, "rootfs extraction failed exit=" + p.exitValue() + "\n" + out);
                 return false;
             }
+
+            // (permissions widened at the top of deployRootfs already)
         } catch (Exception e) {
             Log.e(LOG_TAG, "rootfs extraction error", e);
             return false;
@@ -179,6 +186,29 @@ public final class DshSetup {
         } catch (Exception e) {
             Log.e(LOG_TAG, "write failed: " + file, e);
         }
+    }
+
+    /** Widens rootfs permissions to world-readable (u=rwx,go+rX). */
+    private static void widenPermissions(Context context, File rootfs) {
+        try {
+            File usrBin = new File(context.getFilesDir(), BIN_DIR);
+            ProcessBuilder chmod = new ProcessBuilder(
+                    "/system/bin/sh", "-c",
+                    "LD_LIBRARY_PATH=" + quote(new File(context.getFilesDir(), LIB_DIR).getAbsolutePath())
+                        + " " + quote(new File(usrBin, "busybox").getAbsolutePath())
+                        + " chmod -R u=rwx,go+rX " + quote(rootfs.getAbsolutePath())
+            );
+            chmod.redirectErrorStream(true);
+            Process pc = chmod.start();
+            pc.waitFor(60, java.util.concurrent.TimeUnit.SECONDS);
+            Log.i(LOG_TAG, "rootfs permissions widened (exit=" + pc.exitValue() + ")");
+        } catch (Exception e) {
+            Log.w(LOG_TAG, "widenPermissions failed", e);
+        }
+    }
+
+    private static boolean validateRootfs(Context context) {
+        return new File(rootfsDir(context), "opt/start-dsh.sh").exists();
     }
 
     private static String quote(String s) {

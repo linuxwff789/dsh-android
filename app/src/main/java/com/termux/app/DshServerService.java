@@ -102,19 +102,35 @@ public class DshServerService extends Service {
         File rootfs = DshSetup.rootfsDir(this);
         File logFile = new File(filesDir, "dsh/server.log");
         boolean lan = prefs.getBoolean(KEY_LAN, false);
+        File cacheDir = new File(filesDir, "cache");
+        cacheDir.mkdirs();
+
+        // Mirrors proot-distro's proven argv. The fake kernel-release string
+        // (with arch suffix) is REQUIRED for sane guest uname/elf handling.
+        String kernelRelease = "\\Linux\\localhost\\6.17.0-PRoot-Distro"
+                + "\\#1 SMP PREEMPT_DYNAMIC Fri, 10 Oct 2025 00:00:00 +0000"
+                + "\\aarch64\\localdomain\\-1\\";
 
         ProcessBuilder pb = new ProcessBuilder(
                 new File(binDir, "proot").getAbsolutePath(),
-                "-r", rootfs.getAbsolutePath(),
-                "-0",
                 "--link2symlink",
-                "-w", "/",
+                "--sysvipc",
+                "--kernel-release=" + kernelRelease,
+                "-L",
+                "--change-id=0:0",
+                "--rootfs=" + rootfs.getAbsolutePath(),
+                "--cwd=/",
+                "--bind=/dev",
+                "--bind=/proc",
+                "--bind=/sys",
+                "--bind=/dev/urandom:/dev/random",
                 "/bin/sh", "/opt/start-dsh.sh"
         );
         pb.environment().put("PATH", binDir.getAbsolutePath() + ":/system/bin");
         pb.environment().put("LD_LIBRARY_PATH", libDir.getAbsolutePath());
         pb.environment().put("HOME", "/root");
-        pb.environment().put("TMPDIR", new File(filesDir, "cache").getAbsolutePath());
+        pb.environment().put("TMPDIR", cacheDir.getAbsolutePath());
+        pb.environment().remove("LD_PRELOAD");
         String apiKey = prefs.getString(KEY_API_KEY, null);
         if (apiKey != null && !apiKey.isEmpty()) {
             pb.environment().put("DEEPSEEK_API_KEY", apiKey);
