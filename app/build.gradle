@@ -253,6 +253,13 @@ task downloadBootstraps() {
 }
 
 afterEvaluate {
+    // Ensure bootstrap-*.zip is downloaded before the native termux-bootstrap
+    // target compiles (termux-bootstrap-zip.S .incbin's them). In release the
+    // ndk-build task may be scheduled BEFORE javaCompile, so we must wire the
+    // download as a dependency of the native build too, not just javaCompile.
+    tasks.matching { it.name.startsWith("buildNdkBuild") }.configureEach {
+        dependsOn downloadBootstraps
+    }
     android.applicationVariants.all { variant ->
         variant.javaCompileProvider.get().dependsOn(downloadBootstraps)
     }
