@@ -127,8 +127,8 @@ public class DshWebActivity extends Activity {
             String text = new String(bytes, StandardCharsets.UTF_8);
             String bash = new File(getFilesDir(), "usr/bin/bash").getAbsolutePath();
             if (text.startsWith("#!")) {
-                int newline = text.indexOf('\\n');
-                text = "#!" + bash + (newline >= 0 ? text.substring(newline) : "\\n");
+                int newline = text.indexOf('\n');
+                text = "#!" + bash + (newline >= 0 ? text.substring(newline) : "\n");
                 try (FileOutputStream out = new FileOutputStream(destination)) {
                     out.write(text.getBytes(StandardCharsets.UTF_8));
                 }
