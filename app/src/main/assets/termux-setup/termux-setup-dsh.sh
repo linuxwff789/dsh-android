@@ -34,6 +34,29 @@ export CURL_CA_BUNDLE="$PREFIX/etc/tls/cert.pem"
 mkdir -p "$PREFIX/etc/apt/apt.conf.d"
 echo "Acquire::https::CAInfo \"$PREFIX/etc/tls/cert.pem\";" > "$PREFIX/etc/apt/apt.conf.d/00-dsh-cainfo"
 
+# apt/dpkg also have the stock /data/data/com.termux paths compiled in for
+# their config/state dirs. The app cannot read that other app's private
+# dir, so redirect both to the fork's own dirs via their env/config hooks:
+#   DPKG_CONFIG_DIR / DPKG_ADMINDIR (dpkg >= 1.19.4)
+#   APT_CONFIG (apt reads this file in place of the baked-in dirs)
+export DPKG_CONFIG_DIR="$PREFIX/etc/dpkg"
+export DPKG_ADMINDIR="$PREFIX/var/lib/dpkg"
+mkdir -p "$PREFIX/etc/apt/apt.conf.d" \
+  "$PREFIX/var/lib/apt/lists/partial" \
+  "$PREFIX/var/cache/apt/archives/partial" \
+  "$PREFIX/var/lib/dpkg"
+cat > "$PREFIX/etc/apt/dsh-apt.conf" <<EOF
+Dir::Etc::main "$PREFIX/etc/apt/sources.list";
+Dir::Etc::parts "$PREFIX/etc/apt/apt.conf.d";
+Dir::Etc::sourceparts "$PREFIX/etc/apt/sources.list.d";
+Dir::Etc::trustedparts "$PREFIX/etc/apt/trusted.gpg.d";
+Dir::State "$PREFIX/var/lib/apt";
+Dir::State::status "$PREFIX/var/lib/dpkg/status";
+Dir::Cache "$PREFIX/var/cache/apt";
+Dir::Cache::archives "$PREFIX/var/cache/apt/archives";
+EOF
+export APT_CONFIG="$PREFIX/etc/apt/dsh-apt.conf"
+
 # Pre-select the Tsinghua mirror so pkg skips probing ~40 mirrors.
 TUNA_MIRROR="$PREFIX/etc/termux/mirrors/chinese_mainland/mirrors.tuna.tsinghua.edu.cn"
 if [ -f "$TUNA_MIRROR" ]; then

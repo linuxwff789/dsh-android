@@ -277,9 +277,63 @@ def patchBootstrapZip(String arch) {
         zout.close()
         zin.close()
     }
-    logger.quiet("Patched " + zipFile.name + ": " + patchedCount + " files (com.termux -> " + pkgName + ")")
-    zipFile.delete()
-    if (!patchedZip.renameTo(zipFile)) throw new GradleException("Failed to replace " + zipFile)
+    // Bake fork-specific config into the archive so even the very FIRST
+    // pkg/apt invocation works without the setup script. Paths are
+    // generated with the fork package name directly (these entries are
+    // added after the text pass, so com.termux would not be rewritten).
+    def P = "/data/data/" + pkgName + "/files/usr"
+    def extra = [
+        "etc/apt/apt.conf.d/00-dsh-cainfo":
+            "Acquire::https::CAInfo \"${P}/etc/tls/cert.pem\";\n",
+        "etc/apt/dsh-apt.conf":
+            "Dir::Etc::main \"${P}/etc/apt/sources.list\";\n" +
+            "Dir::Etc::parts \"${P}/etc/apt/apt.conf.d\";\n" +
+            "Dir::Etc::sourceparts \"${P}/etc/apt/sources.list.d\";\n" +
+            "Dir::Etc::trustedparts \"${P}/etc/apt/trusted.gpg.d\";\n" +
+            "Dir::State \"${P}/var/lib/apt\";\n" +
+            "Dir::State::status \"${P}/var/lib/dpkg/status\";\n" +
+            "Dir::Cache \"${P}/var/cache/apt\";\n" +
+            "Dir::Cache::archives \"${P}/var/cache/apt/archives\";\n"
+    ]
+    def symlinksRewritten = false
+    def zin2 = new java.util.zip.ZipInputStream(new BufferedInputStream(new FileInputStream(patchedZip)))
+    def zout2 = new java.util.zip.ZipOutputStream(new BufferedOutputStream(new FileOutputStream(zipFile)))
+    try {
+        java.util.zip.ZipEntry entry2
+        byte[] buffer2 = new byte[65536]
+        while ((entry2 = zin2.getNextEntry()) != null) {
+            def newEntry = new java.util.zip.ZipEntry(entry2.name)
+            newEntry.time = entry2.time
+            zout2.putNextEntry(newEntry)
+            if (!entry2.isDirectory()) {
+                def bos2 = new java.io.ByteArrayOutputStream()
+                int n2
+                while ((n2 = zin2.read(buffer2)) != -1) bos2.write(buffer2, 0, n2)
+                def bytes2 = bos2.toByteArray()
+                if (entry2.name == "SYMLINKS.txt") {
+                    def text2 = new String(bytes2, "UTF-8")
+                    text2 += "${P}/etc/termux/mirrors/chinese_mainland/mirrors.tuna.tsinghua.edu.cn\u2190./etc/termux/chosen_mirrors\n"
+                    bytes2 = text2.getBytes("UTF-8")
+                    symlinksRewritten = true
+                }
+                zout2.write(bytes2)
+            }
+            zout2.closeEntry()
+        }
+        if (!symlinksRewritten) throw new GradleException("SYMLINKS.txt not found in " + zipFile.name)
+        extra.each { name, content ->
+            def ze = new java.util.zip.ZipEntry(name)
+            ze.time = System.currentTimeMillis()
+            zout2.putNextEntry(ze)
+            zout2.write(content.getBytes("UTF-8"))
+            zout2.closeEntry()
+        }
+    } finally {
+        zout2.close()
+        zin2.close()
+    }
+    logger.quiet("Patched " + zipFile.name + ": " + patchedCount + " files (com.termux -> " + pkgName + ")" + (symlinksRewritten ? " + chosen_mirrors symlink" : ""))
+    patchedZip.delete()
 }
 
 clean {
