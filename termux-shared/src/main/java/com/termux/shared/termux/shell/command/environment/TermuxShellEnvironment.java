@@ -86,9 +86,19 @@ public class TermuxShellEnvironment extends AndroidShellEnvironment {
                 environment.put(ENV_PATH, TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + ":" + TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH + "/applets");
                 environment.put(ENV_LD_LIBRARY_PATH, TermuxConstants.TERMUX_LIB_PREFIX_DIR_PATH);
             } else {
-                // Termux binaries on Android 7+ rely on DT_RUNPATH, so LD_LIBRARY_PATH should be unset by default
                 environment.put(ENV_PATH, TermuxConstants.TERMUX_BIN_PREFIX_DIR_PATH);
-                environment.remove(ENV_LD_LIBRARY_PATH);
+                // The official termux-packages bootstrap binaries carry an
+                // absolute DT_RUNPATH of "/data/data/com.termux/files/usr/lib"
+                // (the stock package path baked in at build time). In this fork
+                // the prefix lives under dev.lwff.dsh, so that RUNPATH is stale
+                // and exec'ing any binary fails with:
+                //   CANNOT LINK EXECUTABLE ...: library "libandroid-support.so"
+                //   not found: needed by main executable
+                // bionic searches LD_LIBRARY_PATH BEFORE DT_RUNPATH, so pointing
+                // it at $PREFIX/lib makes every bootstrap binary (and every
+                // package later installed from termux-packages) resolve its
+                // libraries from the fork's own prefix.
+                environment.put(ENV_LD_LIBRARY_PATH, TermuxConstants.TERMUX_LIB_PREFIX_DIR_PATH);
             }
         }
 
