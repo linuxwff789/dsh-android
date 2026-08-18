@@ -309,11 +309,11 @@ def patchBootstrapZip(String arch) {
             "# Rewrite com.termux shebangs in installed scripts to this fork's prefix.\n" +
             "# Installed via DPkg::Post-Invoke so every package apt installs is covered.\n" +
             "for d in \"${P}/bin\" \"${P}/libexec\"; do\n" +
-            "  for f in \"$d\"/*; do\n" +
-            "    [ -f \"$f\" ] || continue\n" +
-            "    case \"$(head -c 100 \"$f\" | head -1)\" in\n" +
+            "  for f in \"\$d\"/*; do\n" +
+            "    [ -f \"\$f\" ] || continue\n" +
+            "    case \"\$(head -c 100 \"\$f\" | head -1)\" in\n" +
             "      '#!'*com.termux*)\n" +
-            "        sed -i '1s#com.termux#${pkgName}#' \"$f\" 2>/dev/null || true\n" +
+            "        sed -i '1s#com.termux#${pkgName}#' \"\$f\" 2>/dev/null || true\n" +
             "        ;;\n" +
             "    esac\n" +
             "  done\n" +
