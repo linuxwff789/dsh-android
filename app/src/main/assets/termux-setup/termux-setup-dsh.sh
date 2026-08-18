@@ -97,12 +97,23 @@ fi
 # with "Extra junk at end of file". Use apt-get directly with a deb822
 # source file (same shape as stock Termux setups).
 mkdir -p "$PREFIX/etc/apt/sources.list.d"
+# The fork's apt variant ships a keyring WITHOUT the official Termux signing
+# key (5A897D96E57CF20C), so verifies fail with NO_PUBKEY. Deploy the bundled
+# official termux.gpg into trusted.gpg.d (the app copies it next to this
+# script), then point Signed-By at it.
+mkdir -p "$PREFIX/etc/apt/trusted.gpg.d"
+if [ -s "$SCRIPT_DIR/termux.gpg" ]; then
+  cp -f "$SCRIPT_DIR/termux.gpg" "$PREFIX/etc/apt/trusted.gpg.d/termux.gpg"
+  SIGNED_BY="$PREFIX/etc/apt/trusted.gpg.d/termux.gpg"
+else
+  SIGNED_BY="$PREFIX/etc/apt/trusted.gpg.d/2096779623.gpg"
+fi
 cat > "$PREFIX/etc/apt/sources.list.d/termux.sources" <<EOF
 Types: deb
 URIs: https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
 Suites: stable
 Components: main
-Signed-By: $PREFIX/etc/apt/trusted.gpg.d/2096779623.gpg
+Signed-By: $SIGNED_BY
 EOF
 : > "$PREFIX/etc/apt/sources.list"
 

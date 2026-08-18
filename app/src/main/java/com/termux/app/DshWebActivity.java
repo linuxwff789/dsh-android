@@ -87,6 +87,12 @@ public class DshWebActivity extends Activity {
             patch = new File(home, "dsh-android/scripts/patches/dsh-on-android.patch");
             copyAsset("termux-setup/termux-setup-dsh.sh", script, true);
             copyAsset("termux-setup/patches/dsh-on-android.patch", patch, false);
+            // Official Termux gpg key (5A897D96E57CF20C) used to sign the
+            // termux-main InRelease. The fork's apt variant ships a keyring
+            // WITHOUT it, so signatures fail with NO_PUBKEY. Deploy it next to
+            // the setup script so the script can install it into trusted.gpg.d.
+            File gpg = new File(home, "dsh-android/scripts/termux.gpg");
+            copyAsset("termux-setup/termux.gpg", gpg, false);
         } catch (Exception e) {
             android.util.Log.e("DshWebActivity", "Unable to copy bundled Termux installer assets", e);
             return;
