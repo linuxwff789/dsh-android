@@ -22,6 +22,7 @@ import com.termux.R;
 import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 
 /**
  * Thin WebView client for the DSH server hosted by Termux.
@@ -88,14 +89,23 @@ public class DshWebActivity extends Activity {
                     UriUtils.getFileUri(script.getAbsolutePath()));
             intent.setClass(this, TermuxService.class);
             intent.putExtra(TERMUX_SERVICE.EXTRA_RUNNER, "terminal-session");
+            // Do not ask the service to launch TermuxActivity: that path requires
+            // SYSTEM_ALERT_WINDOW on Android 10+. We are already foreground, so
+            // launch the terminal activity ourselves below.
             intent.putExtra(TERMUX_SERVICE.EXTRA_SESSION_ACTION,
-                    TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_OPEN_ACTIVITY);
+                    TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_DONT_OPEN_ACTIVITY);
             intent.putExtra(TERMUX_SERVICE.EXTRA_SHELL_CREATE_MODE, "always");
             intent.putExtra(TERMUX_SERVICE.EXTRA_COMMAND_LABEL, "Install DSH");
             intent.putExtra(TERMUX_SERVICE.EXTRA_COMMAND_DESCRIPTION,
                     "Install Debian, Node.js and DeepSeek Harness");
             intent.putExtra(TERMUX_SERVICE.EXTRA_ARGUMENTS, new String[0]);
             startService(intent);
+            handler.postDelayed(() -> {
+                if (destroyed) return;
+                Intent terminal = new Intent(this, TermuxActivity.class);
+                terminal.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                startActivity(terminal);
+            }, 500);
         } catch (Exception e) {
             android.util.Log.e("DshWebActivity", "Unable to start bundled Termux installer", e);
         }
@@ -108,6 +118,21 @@ public class DshWebActivity extends Activity {
             byte[] buffer = new byte[65536];
             int n;
             while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+        // The bundled script must use this APK's private Termux prefix. The
+        // original Termux shebang (/data/data/com.termux/...) is invalid when
+        // the embedded Termux runtime belongs to dev.lwff.dsh.
+        if (assetName.endsWith("termux-setup-dsh.sh")) {
+            byte[] bytes = java.nio.file.Files.readAllBytes(destination.toPath());
+            String text = new String(bytes, StandardCharsets.UTF_8);
+            String bash = new File(getFilesDir(), "usr/bin/bash").getAbsolutePath();
+            if (text.startsWith("#!")) {
+                int newline = text.indexOf('\\n');
+                text = "#!" + bash + (newline >= 0 ? text.substring(newline) : "\\n");
+                try (FileOutputStream out = new FileOutputStream(destination)) {
+                    out.write(text.getBytes(StandardCharsets.UTF_8));
+                }
+            }
         }
         destination.setExecutable(executable, false);
     }
