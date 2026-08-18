@@ -79,36 +79,52 @@ public class DshWebActivity extends Activity {
         File home = new File(getFilesDir(), "home");
         File marker = new File(home, SETUP_MARKER);
         if (marker.exists()) return;
+        final File script;
+        final File patch;
         try {
             home.mkdirs();
-            File script = new File(home, "dsh-android/scripts/termux-setup-dsh.sh");
-            File patch = new File(home, "dsh-android/scripts/patches/dsh-on-android.patch");
+            script = new File(home, "dsh-android/scripts/termux-setup-dsh.sh");
+            patch = new File(home, "dsh-android/scripts/patches/dsh-on-android.patch");
             copyAsset("termux-setup/termux-setup-dsh.sh", script, true);
             copyAsset("termux-setup/patches/dsh-on-android.patch", patch, false);
-            Intent intent = new Intent(TERMUX_SERVICE.ACTION_SERVICE_EXECUTE,
-                    UriUtils.getFileUri(script.getAbsolutePath()));
-            intent.setClass(this, TermuxService.class);
-            intent.putExtra(TERMUX_SERVICE.EXTRA_RUNNER, "terminal-session");
-            // Do not ask the service to launch TermuxActivity: that path requires
-            // SYSTEM_ALERT_WINDOW on Android 10+. We are already foreground, so
-            // launch the terminal activity ourselves below.
-            intent.putExtra(TERMUX_SERVICE.EXTRA_SESSION_ACTION,
-                    TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_DONT_OPEN_ACTIVITY);
-            intent.putExtra(TERMUX_SERVICE.EXTRA_SHELL_CREATE_MODE, "always");
-            intent.putExtra(TERMUX_SERVICE.EXTRA_COMMAND_LABEL, "Install DSH");
-            intent.putExtra(TERMUX_SERVICE.EXTRA_COMMAND_DESCRIPTION,
-                    "Install Debian, Node.js and DeepSeek Harness");
-            intent.putExtra(TERMUX_SERVICE.EXTRA_ARGUMENTS, new String[0]);
-            startService(intent);
-            handler.postDelayed(() -> {
-                if (destroyed) return;
-                Intent terminal = new Intent(this, TermuxActivity.class);
-                terminal.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
-                startActivity(terminal);
-            }, 500);
         } catch (Exception e) {
-            android.util.Log.e("DshWebActivity", "Unable to start bundled Termux installer", e);
+            android.util.Log.e("DshWebActivity", "Unable to copy bundled Termux installer assets", e);
+            return;
         }
+        // The embedded Termux runtime (files/usr) is populated by
+        // TermuxInstaller, which TermuxActivity only triggers while it has NO
+        // sessions. We start the installer session ourselves below, so ensure
+        // the bootstrap exists first — otherwise the script shebang
+        // (#!.../files/usr/bin/bash) fails with "script not found" because
+        // bash is missing.
+        TermuxInstaller.setupBootstrapIfNeeded(this, () -> {
+            if (destroyed) return;
+            try {
+                Intent intent = new Intent(TERMUX_SERVICE.ACTION_SERVICE_EXECUTE,
+                        UriUtils.getFileUri(script.getAbsolutePath()));
+                intent.setClass(this, TermuxService.class);
+                intent.putExtra(TERMUX_SERVICE.EXTRA_RUNNER, "terminal-session");
+                // Do not ask the service to launch TermuxActivity: that path requires
+                // SYSTEM_ALERT_WINDOW on Android 10+. We are already foreground, so
+                // launch the terminal activity ourselves below.
+                intent.putExtra(TERMUX_SERVICE.EXTRA_SESSION_ACTION,
+                        TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_DONT_OPEN_ACTIVITY);
+                intent.putExtra(TERMUX_SERVICE.EXTRA_SHELL_CREATE_MODE, "always");
+                intent.putExtra(TERMUX_SERVICE.EXTRA_COMMAND_LABEL, "Install DSH");
+                intent.putExtra(TERMUX_SERVICE.EXTRA_COMMAND_DESCRIPTION,
+                        "Install Debian, Node.js and DeepSeek Harness");
+                intent.putExtra(TERMUX_SERVICE.EXTRA_ARGUMENTS, new String[0]);
+                startService(intent);
+                handler.postDelayed(() -> {
+                    if (destroyed) return;
+                    Intent terminal = new Intent(this, TermuxActivity.class);
+                    terminal.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                    startActivity(terminal);
+                }, 500);
+            } catch (Exception e) {
+                android.util.Log.e("DshWebActivity", "Unable to start bundled Termux installer", e);
+            }
+        });
     }
 
     private void copyAsset(String assetName, File destination, boolean executable) throws Exception {
