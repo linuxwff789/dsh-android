@@ -1,7 +1,12 @@
 package com.termux.app;
 
 import android.app.Activity;
+import android.content.Intent;
+import android.net.Uri;
 import android.os.Bundle;
+
+import com.termux.shared.net.uri.UriUtils;
+import com.termux.shared.termux.TermuxConstants.TERMUX_APP.TERMUX_SERVICE;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.Menu;
@@ -14,6 +19,10 @@ import android.webkit.WebViewClient;
 
 import com.termux.R;
 
+import java.io.File;
+import java.io.FileOutputStream;
+import java.io.InputStream;
+
 /**
  * Thin WebView client for the DSH server hosted by Termux.
  *
@@ -23,6 +32,7 @@ import com.termux.R;
 public class DshWebActivity extends Activity {
     private static final String DSH_URL = "http://127.0.0.1:3080";
     private static final String WAIT_PAGE = "file:///android_asset/wait.html";
+    private static final String SETUP_MARKER = ".dsh-setup-complete";
 
     private WebView webView;
     private boolean destroyed;
@@ -57,6 +67,49 @@ public class DshWebActivity extends Activity {
 
         webView.loadUrl(WAIT_PAGE);
         scheduleConnect();
+        startBundledTermuxSetupIfNeeded();
+    }
+
+    /**
+     * Run the bundled installer in a visible Termux terminal session. Termux
+     * owns the shell, so apt/pnpm/build output is rendered live to the user.
+     */
+    private void startBundledTermuxSetupIfNeeded() {
+        File home = new File(getFilesDir(), "home");
+        File marker = new File(home, SETUP_MARKER);
+        if (marker.exists()) return;
+        try {
+            home.mkdirs();
+            File script = new File(home, "dsh-android/scripts/termux-setup-dsh.sh");
+            File patch = new File(home, "dsh-android/scripts/patches/dsh-on-android.patch");
+            copyAsset("termux-setup/termux-setup-dsh.sh", script, true);
+            copyAsset("termux-setup/patches/dsh-on-android.patch", patch, false);
+            Intent intent = new Intent(TERMUX_SERVICE.ACTION_SERVICE_EXECUTE,
+                    UriUtils.getFileUri(script.getAbsolutePath()));
+            intent.setClass(this, TermuxService.class);
+            intent.putExtra(TERMUX_SERVICE.EXTRA_RUNNER, "terminal-session");
+            intent.putExtra(TERMUX_SERVICE.EXTRA_SESSION_ACTION,
+                    TERMUX_SERVICE.VALUE_EXTRA_SESSION_ACTION_SWITCH_TO_NEW_SESSION_AND_OPEN_ACTIVITY);
+            intent.putExtra(TERMUX_SERVICE.EXTRA_SHELL_CREATE_MODE, "always");
+            intent.putExtra(TERMUX_SERVICE.EXTRA_COMMAND_LABEL, "Install DSH");
+            intent.putExtra(TERMUX_SERVICE.EXTRA_COMMAND_DESCRIPTION,
+                    "Install Debian, Node.js and DeepSeek Harness");
+            intent.putExtra(TERMUX_SERVICE.EXTRA_ARGUMENTS, new String[0]);
+            startService(intent);
+        } catch (Exception e) {
+            android.util.Log.e("DshWebActivity", "Unable to start bundled Termux installer", e);
+        }
+    }
+
+    private void copyAsset(String assetName, File destination, boolean executable) throws Exception {
+        destination.getParentFile().mkdirs();
+        try (InputStream in = getAssets().open(assetName);
+             FileOutputStream out = new FileOutputStream(destination)) {
+            byte[] buffer = new byte[65536];
+            int n;
+            while ((n = in.read(buffer)) != -1) out.write(buffer, 0, n);
+        }
+        destination.setExecutable(executable, false);
     }
 
     private void scheduleConnect() {
