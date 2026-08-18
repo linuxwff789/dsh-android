@@ -17,8 +17,10 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 PATCH="${PATCH:-$SCRIPT_DIR/patches/dsh-on-android.patch}"
 
 echo "[0] Termux prerequisites"
-command -v proot-distro >/dev/null || pkg install -y proot-distro proot
+# Fresh bootstraps have no apt lists yet; update BEFORE install or the
+# install fails and set -e aborts the whole script.
 pkg update -y >/dev/null 2>&1 || true
+command -v proot-distro >/dev/null || pkg install -y proot-distro proot
 
 echo "[1] Debian container ($CONTAINER)"
 if ! proot-distro list 2>&1 | grep -qE "[ *] *$CONTAINER"; then
