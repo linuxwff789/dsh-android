@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths: ["app/**", "scripts/**", "patches/**", ".github/workflows/build-apk.yml"]
+    paths: ["app/**", "termux-shared/**", "terminal-emulator/**", "terminal-view/**", "scripts/**", "patches/**", ".github/workflows/build-apk.yml"]
 
 jobs:
   apk:
