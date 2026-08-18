@@ -250,25 +250,32 @@ def patchBootstrapZip(String arch) {
     patchedZip.parentFile.mkdirs()
 
     def patchedCount = 0
-    new java.util.zip.ZipInputStream(new FileInputStream(zipFile)).withCloseable { zin ->
-        new java.util.zip.ZipOutputStream(new FileOutputStream(patchedZip)).withCloseable { zout ->
-            java.util.zip.ZipEntry entry
-            while ((entry = zin.getNextEntry()) != null) {
-                def bytes = zin.bytes
-                def newEntry = new java.util.zip.ZipEntry(entry.name)
-                newEntry.time = entry.time
-                zout.putNextEntry(newEntry)
-                if (!entry.isDirectory()) {
-                    def text = new String(bytes, "UTF-8")
-                    if (!text.contains("\u0000") && text.contains("com.termux")) {
-                        bytes = text.replace("com.termux", pkgName).getBytes("UTF-8")
-                        patchedCount++
-                    }
-                    zout.write(bytes)
+    def zin = new java.util.zip.ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))
+    def zout = new java.util.zip.ZipOutputStream(new BufferedOutputStream(new FileOutputStream(patchedZip)))
+    try {
+        java.util.zip.ZipEntry entry
+        byte[] buffer = new byte[65536]
+        while ((entry = zin.getNextEntry()) != null) {
+            def newEntry = new java.util.zip.ZipEntry(entry.name)
+            newEntry.time = entry.time
+            zout.putNextEntry(newEntry)
+            if (!entry.isDirectory()) {
+                def bos = new java.io.ByteArrayOutputStream()
+                int n
+                while ((n = zin.read(buffer)) != -1) bos.write(buffer, 0, n)
+                def bytes = bos.toByteArray()
+                def text = new String(bytes, "UTF-8")
+                if (!text.contains("\u0000") && text.contains("com.termux")) {
+                    bytes = text.replace("com.termux", pkgName).getBytes("UTF-8")
+                    patchedCount++
                 }
-                zout.closeEntry()
+                zout.write(bytes)
             }
+            zout.closeEntry()
         }
+    } finally {
+        zout.close()
+        zin.close()
     }
     logger.quiet("Patched " + zipFile.name + ": " + patchedCount + " files (com.termux -> " + pkgName + ")")
     zipFile.delete()
