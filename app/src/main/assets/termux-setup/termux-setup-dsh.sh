@@ -23,6 +23,23 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 PATCH="${PATCH:-$SCRIPT_DIR/patches/dsh-on-android.patch}"
 
 echo "[0] Termux prerequisites"
+# The stock bootstrap binaries have /data/data/com.termux paths compiled in
+# (DT_RUNPATH for shared libs, TLS CA bundle paths). The app cannot read
+# that other app's private dir (mode 0700, different uid), so:
+#  - curl/openssl tools get the fork's own CA bundle via SSL_CERT_FILE
+#  - apt's https method (gnutls, which ignores SSL_CERT_FILE) gets it via
+#    Acquire::https::CAInfo
+export SSL_CERT_FILE="$PREFIX/etc/tls/cert.pem"
+export CURL_CA_BUNDLE="$PREFIX/etc/tls/cert.pem"
+mkdir -p "$PREFIX/etc/apt/apt.conf.d"
+echo "Acquire::https::CAInfo \"$PREFIX/etc/tls/cert.pem\";" > "$PREFIX/etc/apt/apt.conf.d/00-dsh-cainfo"
+
+# Pre-select the Tsinghua mirror so pkg skips probing ~40 mirrors.
+TUNA_MIRROR="$PREFIX/etc/termux/mirrors/chinese_mainland/mirrors.tuna.tsinghua.edu.cn"
+if [ -f "$TUNA_MIRROR" ]; then
+  ln -sfn "$TUNA_MIRROR" "$PREFIX/etc/termux/chosen_mirrors"
+fi
+
 # China-friendly mirror: the bootstrap ships packages-cf.termux.dev which is
 # slow/unreliable in China. Switch to the Tsinghua mirror (same as stock
 # Termux setups use) before any apt operation.

@@ -99,6 +99,15 @@ public class TermuxShellEnvironment extends AndroidShellEnvironment {
                 // package later installed from termux-packages) resolve its
                 // libraries from the fork's own prefix.
                 environment.put(ENV_LD_LIBRARY_PATH, TermuxConstants.TERMUX_LIB_PREFIX_DIR_PATH);
+                // Same baked-in-path problem for TLS: the stock binaries carry
+                // /data/data/com.termux/.../cert.pem as their CA bundle path,
+                // which the fork app cannot read. Point curl/openssl tools at
+                // the fork's own bundle (apt's gnutls backend ignores this env
+                // var and is handled via Acquire::https::CAInfo in the setup
+                // script instead).
+                String certPath = TermuxConstants.TERMUX_ETC_PREFIX_DIR_PATH + "/tls/cert.pem";
+                environment.put("SSL_CERT_FILE", certPath);
+                environment.put("CURL_CA_BUNDLE", certPath);
             }
         }
 
