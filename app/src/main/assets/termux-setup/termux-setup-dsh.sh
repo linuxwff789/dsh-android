@@ -58,6 +58,7 @@ Dir::Cache::archives "$PREFIX/var/cache/apt/archives";
 Dir::Cache::pkgcache "$PREFIX/var/cache/apt/pkgcache.bin";
 Dir::Cache::srcpkgcache "$PREFIX/var/cache/apt/srcpkgcache.bin";
 Dir::Bin::methods "$PREFIX/lib/apt/methods";
+Dir::Bin::apt-key "$PREFIX/bin/apt-key";
 Dir::Bin::dpkg "$PREFIX/bin/dpkg";
 Dir::Bin::dpkg-deb "$PREFIX/bin/dpkg-deb";
 Dir::Bin::gpgv "$PREFIX/bin/gpgv";
