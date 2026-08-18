@@ -63,15 +63,23 @@ if [ -f "$TUNA_MIRROR" ]; then
   ln -sfn "$TUNA_MIRROR" "$PREFIX/etc/termux/chosen_mirrors"
 fi
 
-# China-friendly mirror: the bootstrap ships packages-cf.termux.dev which is
-# slow/unreliable in China. Switch to the Tsinghua mirror (same as stock
-# Termux setups use) before any apt operation.
-sed -i "s#https://packages-cf.termux.dev/apt/termux-main#https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main#g" \
-  "$PREFIX/etc/apt/sources.list" 2>/dev/null || true
+# apt 3.x only accepts deb822 sources; pkg's legacy one-line format fails
+# with "Extra junk at end of file". Use apt-get directly with a deb822
+# source file (same shape as stock Termux setups).
+mkdir -p "$PREFIX/etc/apt/sources.list.d"
+cat > "$PREFIX/etc/apt/sources.list.d/termux.sources" <<EOF
+Types: deb
+URIs: https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main
+Suites: stable
+Components: main
+Signed-By: $PREFIX/etc/apt/trusted.gpg.d/2096779623.gpg
+EOF
+: > "$PREFIX/etc/apt/sources.list"
+
 # Fresh bootstraps have no apt lists yet; update BEFORE install or the
 # install fails and set -e aborts the whole script.
-pkg update -y >/dev/null 2>&1 || true
-command -v proot-distro >/dev/null || pkg install -y proot-distro proot
+apt-get update 2>&1 || true
+command -v proot-distro >/dev/null || apt-get install -y proot-distro proot
 
 echo "[1] Debian container ($CONTAINER)"
 if ! proot-distro list 2>&1 | grep -qE "[ *] *$CONTAINER"; then

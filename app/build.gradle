@@ -252,6 +252,17 @@ def patchBootstrapZip(String arch) {
     def patchedCount = 0
     def zin = new java.util.zip.ZipInputStream(new BufferedInputStream(new FileInputStream(zipFile)))
     def zout = new java.util.zip.ZipOutputStream(new BufferedOutputStream(new FileOutputStream(patchedZip)))
+    // dpkg has NO env override for its config dir (no DPKG_CONFIG_DIR in
+    // dpkg 1.22); the path is compiled in as "/data/data/com.termux/
+    // files/usr/etc/dpkg" + "/dpkg.cfg.d". Patch it in EVERY entry with a
+    // SAME-LENGTH fork path whose last component is a symlink we add to
+    // SYMLINKS.txt: .../usr/etc/d (-> dpkg). Same length keeps ELF string
+    // table offsets valid, so this is safe on binaries too.
+    def dpkgCfgOld = "/data/data/com.termux/files/usr/etc/dpkg".getBytes("UTF-8")
+    def dpkgCfgNew = ("/data/data/" + pkgName + "/files/usr/etc/d/").getBytes("UTF-8")
+    if (dpkgCfgOld.length != dpkgCfgNew.length)
+        throw new GradleException("dpkg config-dir swap must be same-length")
+    def swapCount = 0
     try {
         java.util.zip.ZipEntry entry
         byte[] buffer = new byte[65536]
@@ -264,6 +275,17 @@ def patchBootstrapZip(String arch) {
                 int n
                 while ((n = zin.read(buffer)) != -1) bos.write(buffer, 0, n)
                 def bytes = bos.toByteArray()
+                // Same-length dpkg config-dir swap (text AND binary files).
+                for (int i = 0; i + dpkgCfgOld.length <= bytes.length; i++) {
+                    boolean match = true
+                    for (int j = 0; j < dpkgCfgOld.length; j++) {
+                        if (bytes[i + j] != dpkgCfgOld[j]) { match = false; break }
+                    }
+                    if (match) {
+                        for (int j = 0; j < dpkgCfgNew.length; j++) bytes[i + j] = dpkgCfgNew[j]
+                        swapCount++
+                    }
+                }
                 def text = new String(bytes, "UTF-8")
                 if (!text.contains("\u0000") && text.contains("com.termux")) {
                     bytes = text.replace("com.termux", pkgName).getBytes("UTF-8")
@@ -313,6 +335,9 @@ def patchBootstrapZip(String arch) {
                 if (entry2.name == "SYMLINKS.txt") {
                     def text2 = new String(bytes2, "UTF-8")
                     text2 += "${P}/etc/termux/mirrors/chinese_mainland/mirrors.tuna.tsinghua.edu.cn\u2190./etc/termux/chosen_mirrors\n"
+                    // etc/d is the same-length alias for dpkg's compiled-in
+                    // config dir (see the dpkgCfg swap in pass 1).
+                    text2 += "${P}/etc/dpkg\u2190./etc/d\n"
                     bytes2 = text2.getBytes("UTF-8")
                     symlinksRewritten = true
                 }
@@ -332,7 +357,7 @@ def patchBootstrapZip(String arch) {
         zout2.close()
         zin2.close()
     }
-    logger.quiet("Patched " + zipFile.name + ": " + patchedCount + " files (com.termux -> " + pkgName + ")" + (symlinksRewritten ? " + chosen_mirrors symlink" : ""))
+    logger.quiet("Patched " + zipFile.name + ": " + patchedCount + " files (com.termux -> " + pkgName + "), " + swapCount + " dpkg-cfg swaps" + (symlinksRewritten ? " + symlinks" : ""))
     patchedZip.delete()
 }
 
