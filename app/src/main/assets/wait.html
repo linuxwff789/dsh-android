@@ -1,26 +1,39 @@
 <!DOCTYPE html>
-<html lang="zh">
+<html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="3">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width,initial-scale=1">
 <title>等待 Termux DSH</title>
 <style>
-  body { background: #111; color: #eee; font-family: sans-serif;
-         display: flex; align-items: center; justify-content: center;
-         height: 100vh; margin: 0; }
-  .box { text-align: center; }
-  .spinner { display: inline-block; width: 32px; height: 32px;
-             border: 4px solid #333; border-top-color: #4fc3f7;
-             border-radius: 50%; animation: spin 1s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  :root { color-scheme: dark; }
+  body { background:#111827; color:#e5e7eb; font-family:sans-serif;
+         margin:0; min-height:100vh; display:flex; align-items:center;
+         justify-content:center; }
+  .box { width:min(680px,calc(100% - 48px)); background:#1f2937;
+         border-radius:16px; padding:28px; box-sizing:border-box; }
+  h1 { margin:0 0 12px; font-size:24px; }
+  p { color:#cbd5e1; line-height:1.6; }
+  .notice { background:#111827; border-left:4px solid #38bdf8;
+            padding:14px 16px; margin:20px 0; line-height:1.7; }
+  code { display:block; background:#030712; color:#86efac; padding:14px;
+         border-radius:8px; white-space:pre-wrap; word-break:break-word;
+         font-family:monospace; line-height:1.6; }
+  .status { color:#fbbf24; margin-top:20px; }
+  .hint { color:#94a3b8; font-size:14px; }
 </style>
 </head>
 <body>
 <div class="box">
-  <div class="spinner"></div>
-  <h2>等待 Termux DSH 服务…</h2>
-  <p>请先在 Termux 执行安装脚本并启动 DSH，本页会自动连接 127.0.0.1:3080</p>
+  <h1>等待 Termux DSH 服务</h1>
+  <p>这个 APK 是 WebView 客户端，Debian、Node.js 和 DSH 都由 Termux 安装。</p>
+  <div class="notice">
+    <b>安装时请看 Termux 终端窗口</b><br>
+    安装命令行输出不会显示在 APK 内，因为 Android 应用不能读取 Termux 的私有终端输出。
+  </div>
+  <p>请在 Termux 中执行：</p>
+  <code>bash ~/dsh-android/scripts/termux-setup-dsh.sh</code>
+  <p class="hint">脚本会显示 apt 下载、Node.js 安装、pnpm install、node-pty 编译和 DSH build 的实时输出。完成后本页会自动连接。</p>
+  <div class="status">正在等待 127.0.0.1:3080 …</div>
 </div>
 </body>
 </html>
