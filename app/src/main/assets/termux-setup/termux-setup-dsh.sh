@@ -8,6 +8,12 @@
 # Usage: bash termux-setup-dsh.sh
 set -euo pipefail
 
+# Capture the whole run so failures are inspectable from outside the
+# terminal (e.g. $HOME/dsh-setup.log under the app data dir).
+LOG_FILE="${DSH_SETUP_LOG:-$HOME/dsh-setup.log}"
+exec >"$LOG_FILE" 2>&1
+echo "[setup] start $(date '+%F %T')"
+
 # ---- mirrors (China-friendly) ----
 APT_MIRROR="${APT_MIRROR:-https://mirrors.tuna.tsinghua.edu.cn/debian}"
 NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
@@ -17,6 +23,11 @@ SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)"
 PATCH="${PATCH:-$SCRIPT_DIR/patches/dsh-on-android.patch}"
 
 echo "[0] Termux prerequisites"
+# China-friendly mirror: the bootstrap ships packages-cf.termux.dev which is
+# slow/unreliable in China. Switch to the Tsinghua mirror (same as stock
+# Termux setups use) before any apt operation.
+sed -i "s#https://packages-cf.termux.dev/apt/termux-main#https://mirrors.tuna.tsinghua.edu.cn/termux/apt/termux-main#g" \
+  "$PREFIX/etc/apt/sources.list" 2>/dev/null || true
 # Fresh bootstraps have no apt lists yet; update BEFORE install or the
 # install fails and set -e aborts the whole script.
 pkg update -y >/dev/null 2>&1 || true
