@@ -304,18 +304,42 @@ def patchBootstrapZip(String arch) {
     // generated with the fork package name directly (these entries are
     // added after the text pass, so com.termux would not be rewritten).
     def P = "/data/data/" + pkgName + "/files/usr"
+    def fixScript =
+            "#!/bin/sh\n" +
+            "# Rewrite com.termux shebangs in installed scripts to this fork's prefix.\n" +
+            "# Installed via DPkg::Post-Invoke so every package apt installs is covered.\n" +
+            "for d in \"${P}/bin\" \"${P}/libexec\"; do\n" +
+            "  for f in \"$d\"/*; do\n" +
+            "    [ -f \"$f\" ] || continue\n" +
+            "    case \"$(head -c 100 \"$f\" | head -1)\" in\n" +
+            "      '#!'*com.termux*)\n" +
+            "        sed -i '1s#com.termux#${pkgName}#' \"$f\" 2>/dev/null || true\n" +
+            "        ;;\n" +
+            "    esac\n" +
+            "  done\n" +
+            "done\n" +
+            "exit 0\n"
     def extra = [
         "etc/apt/apt.conf.d/00-dsh-cainfo":
             "Acquire::https::CAInfo \"${P}/etc/tls/cert.pem\";\n",
+        "bin/dsh-fix-scripts.sh": fixScript,
         "etc/apt/dsh-apt.conf":
             "Dir::Etc::main \"${P}/etc/apt/sources.list\";\n" +
             "Dir::Etc::parts \"${P}/etc/apt/apt.conf.d\";\n" +
             "Dir::Etc::sourceparts \"${P}/etc/apt/sources.list.d\";\n" +
             "Dir::Etc::trustedparts \"${P}/etc/apt/trusted.gpg.d\";\n" +
+            "Dir::Etc::preferencesparts \"${P}/etc/apt/preferences.d\";\n" +
             "Dir::State \"${P}/var/lib/apt\";\n" +
             "Dir::State::status \"${P}/var/lib/dpkg/status\";\n" +
             "Dir::Cache \"${P}/var/cache/apt\";\n" +
-            "Dir::Cache::archives \"${P}/var/cache/apt/archives\";\n"
+            "Dir::Cache::archives \"${P}/var/cache/apt/archives\";\n" +
+            "Dir::Cache::pkgcache \"${P}/var/cache/apt/pkgcache.bin\";\n" +
+            "Dir::Cache::srcpkgcache \"${P}/var/cache/apt/srcpkgcache.bin\";\n" +
+            "Dir::Bin::methods \"${P}/lib/apt/methods\";\n" +
+            "Dir::Bin::dpkg \"${P}/bin/dpkg\";\n" +
+            "Dir::Bin::dpkg-deb \"${P}/bin/dpkg-deb\";\n" +
+            "Dir::Bin::gpgv \"${P}/bin/gpgv\";\n" +
+            "DPkg::Post-Invoke {\"${P}/bin/dsh-fix-scripts.sh\";};\n"
     ]
     def symlinksRewritten = false
     def zin2 = new java.util.zip.ZipInputStream(new BufferedInputStream(new FileInputStream(patchedZip)))

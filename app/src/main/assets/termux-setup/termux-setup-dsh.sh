@@ -50,12 +50,41 @@ Dir::Etc::main "$PREFIX/etc/apt/sources.list";
 Dir::Etc::parts "$PREFIX/etc/apt/apt.conf.d";
 Dir::Etc::sourceparts "$PREFIX/etc/apt/sources.list.d";
 Dir::Etc::trustedparts "$PREFIX/etc/apt/trusted.gpg.d";
+Dir::Etc::preferencesparts "$PREFIX/etc/apt/preferences.d";
 Dir::State "$PREFIX/var/lib/apt";
 Dir::State::status "$PREFIX/var/lib/dpkg/status";
 Dir::Cache "$PREFIX/var/cache/apt";
 Dir::Cache::archives "$PREFIX/var/cache/apt/archives";
+Dir::Cache::pkgcache "$PREFIX/var/cache/apt/pkgcache.bin";
+Dir::Cache::srcpkgcache "$PREFIX/var/cache/apt/srcpkgcache.bin";
+Dir::Bin::methods "$PREFIX/lib/apt/methods";
+Dir::Bin::dpkg "$PREFIX/bin/dpkg";
+Dir::Bin::dpkg-deb "$PREFIX/bin/dpkg-deb";
+Dir::Bin::gpgv "$PREFIX/bin/gpgv";
+DPkg::Post-Invoke {"$PREFIX/bin/dsh-fix-scripts.sh";};
 EOF
 export APT_CONFIG="$PREFIX/etc/apt/dsh-apt.conf"
+
+# Post-Invoke hook: apt-installed script packages (proot-distro, ...) still
+# carry the stock com.termux shebang; rewrite it to this fork's prefix after
+# every dpkg run.
+cat > "$PREFIX/bin/dsh-fix-scripts.sh" <<'HOOK'
+#!/bin/sh
+for d in "$PREFIX/bin" "$PREFIX/libexec"; do
+  for f in "$d"/*; do
+    [ -f "$f" ] || continue
+    case "$(head -c 100 "$f" | head -1)" in
+      '#!'*com.termux*)
+        sed -i "1s#com.termux#$PACKAGE_NAME#" "$f" 2>/dev/null || true
+        ;;
+    esac
+  done
+done
+exit 0
+HOOK
+# POSIX sh has no PREFIX var here; substitute at write time.
+sed -i "s#\$PREFIX#$PREFIX#g; s#\$PACKAGE_NAME#${PACKAGE_NAME:-dev.lwff.dsh}#g" "$PREFIX/bin/dsh-fix-scripts.sh"
+chmod +x "$PREFIX/bin/dsh-fix-scripts.sh"
 
 # Pre-select the Tsinghua mirror so pkg skips probing ~40 mirrors.
 TUNA_MIRROR="$PREFIX/etc/termux/mirrors/chinese_mainland/mirrors.tuna.tsinghua.edu.cn"
