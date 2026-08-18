@@ -69,17 +69,27 @@ public class DshServerService extends Service {
                 sleep(2000);
                 continue;
             }
-            if (!DshSetup.deployBase(this)) {
-                Log.e(LOG_TAG, "base not deployed, retrying");
-                sleep(3000);
-                continue;
+            if (!DshSetup.isBaseExtracted(this)) {
+                Log.i(LOG_TAG, "base not deployed — launching VISIBLE bootstrap in terminal");
+                DshSetup.launchBootstrapVisible(this);
+                long rc = DshSetup.awaitVisible(this, DshSetup.BOOTSTRAP_DONE,
+                        ".bootstrap-exit", 60L * 60 * 1000);
+                if (rc != 0) {
+                    Log.e(LOG_TAG, "visible bootstrap failed rc=" + rc + ", retrying");
+                    sleep(3000);
+                    continue;
+                }
             }
             if (!DshSetup.isDshInstalled(this)) {
-                Log.i(LOG_TAG, "dsh not installed — running online installer (China mirrors)");
-                long rc = DshSetup.runInstaller(this);
-                Log.i(LOG_TAG, "installer returned " + rc);
-                sleep(5000);
-                continue;
+                Log.i(LOG_TAG, "dsh not installed — launching VISIBLE installer in terminal");
+                DshSetup.launchInstallerVisible(this);
+                long rc = DshSetup.awaitVisible(this, DshSetup.INSTALL_DONE,
+                        ".install-exit", 45L * 60 * 1000);
+                if (rc != 0) {
+                    Log.e(LOG_TAG, "visible installer failed rc=" + rc + ", retrying");
+                    sleep(5000);
+                    continue;
+                }
             }
             Log.i(LOG_TAG, "starting dsh web inside container");
             process = spawnServerProcess();
