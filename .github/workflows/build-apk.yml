@@ -48,11 +48,16 @@ jobs:
           set -euo pipefail
           TAG="dsh-nightly"
           APK=$(ls app/build/outputs/apk/release/*.apk | head -1)
-          # a stable release tag so users always have one fixed download link
-          gh release delete "$TAG" --yes --cleanup-tag 2>/dev/null || true
-          gh release create "$TAG" "$APK" \
-            --title "DSH nightly (${{ github.sha }}) v0.118.0+dsh" \
-            --notes "Fixed-signature build. Stable download: https://github.com/linuxwff789/dsh-android/releases/latest"
+          TITLE="DSH nightly (${{ github.sha }}) v0.118.0+dsh"
+          NOTES="Fixed-signature build. Stable download: https://github.com/linuxwff789/dsh-android/releases/latest"
+          # Keep one stable release. Updating the existing release avoids the
+          # delete/create race that can make a successful build fail at publish.
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$APK" --clobber
+            gh release edit "$TAG" --title "$TITLE" --notes "$NOTES"
+          else
+            gh release create "$TAG" "$APK" --title "$TITLE" --notes "$NOTES"
+          fi
 
       - name: Upload APK
         uses: actions/upload-artifact@v6
