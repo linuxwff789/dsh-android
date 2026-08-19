@@ -112,9 +112,20 @@ public class TermuxSession {
                 // https://cs.android.com/android/platform/superproject/+/android-11.0.0_r3:external/mksh/src/main.c;l=41
                 // https://cs.android.com/android/platform/superproject/+/android-11.0.0_r3:external/mksh/Android.bp;l=114
                 executionCommand.executable = "/system/bin/sh";
-            } else {
-                isLoginShell = true;
             }
+            // DSH fork: never start a login shell even when a bootstrap shell
+            // (e.g. bash) exists in $PREFIX/bin. The stock termux bootstrap
+            // binaries are compiled with /data/data/com.termux/files/usr/etc
+            // baked in as their sysconfdir, so `bash -l` sources
+            // /data/data/com.termux/files/usr/etc/profile — another app's
+            // private dir. Under SELinux the fork (dev.lwff.dsh, category
+            // c113) is denied read access to that path (category c47) and
+            // every terminal session aborts with:
+            //   bash: /data/data/com.termux/files/usr/etc/profile: Permission denied
+            // A non-login shell skips the system profile entirely; the
+            // environment (PATH/PREFIX/HOME/...) is injected by
+            // TermuxShellEnvironment, and ~/.bashrc is still sourced for
+            // interactive sessions.
 
         }
 
