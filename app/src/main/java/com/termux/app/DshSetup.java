@@ -325,11 +325,6 @@ public final class DshSetup {
                 + "echo \"$rc\" > \"" + new File(filesDsh, ".install-exit").getAbsolutePath() + "\"\n"
                 + "touch \"" + new File(context.getFilesDir(), INSTALL_DONE).getAbsolutePath() + "\"\n"
                 + "exit $rc\n";
-                + "rc=$?\n"
-                + "echo \"=== installer exit: $rc ===\"\n"
-                + "echo \"$rc\" > \"" + new File(filesDsh, ".install-exit").getAbsolutePath() + "\"\n"
-                + "touch \"" + new File(context.getFilesDir(), INSTALL_DONE).getAbsolutePath() + "\"\n"
-                + "exit $rc\n";
         writeVisibleScript(context, VISIBLE_INSTALL, script);
         launchInTerminal(context, new File(context.getFilesDir(), VISIBLE_INSTALL), "DSH installer");
     }
