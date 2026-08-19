@@ -46,6 +46,7 @@ mkdir -p "$PREFIX/etc/apt/apt.conf.d" \
   "$PREFIX/var/cache/apt/archives/partial" \
   "$PREFIX/var/lib/dpkg"
 cat > "$PREFIX/etc/apt/dsh-apt.conf" <<EOF
+Dir::Etc "$PREFIX/etc/apt";
 Dir::Etc::main "$PREFIX/etc/apt/sources.list";
 Dir::Etc::parts "$PREFIX/etc/apt/apt.conf.d";
 Dir::Etc::sourceparts "$PREFIX/etc/apt/sources.list.d";
@@ -62,8 +63,13 @@ Dir::Bin::apt-key "$PREFIX/bin/apt-key";
 Dir::Bin::dpkg "$PREFIX/bin/dpkg";
 Dir::Bin::dpkg-deb "$PREFIX/bin/dpkg-deb";
 Dir::Bin::gpgv "$PREFIX/bin/gpgv";
+Dir::Log "$PREFIX/var/log/apt";
+DPkg::PATH "$PREFIX/bin:/system/bin";
 DPkg::Post-Invoke {"$PREFIX/bin/dsh-fix-scripts.sh";};
 EOF
+# eipp.log.xz is written by dpkg itself (not apt) and its path is compiled
+# into the binary (stock com.termux). Redirect it the same way:
+mkdir -p "$PREFIX/var/log/apt"
 export APT_CONFIG="$PREFIX/etc/apt/dsh-apt.conf"
 
 # Post-Invoke hook: apt-installed script packages (proot-distro, ...) still
@@ -86,6 +92,33 @@ HOOK
 # POSIX sh has no PREFIX var here; substitute at write time.
 sed -i "s#\$PREFIX#$PREFIX#g; s#\$PACKAGE_NAME#${PACKAGE_NAME:-dev.lwff.dsh}#g" "$PREFIX/bin/dsh-fix-scripts.sh"
 chmod +x "$PREFIX/bin/dsh-fix-scripts.sh"
+
+# apt 3.x (which this fork ships via the real-Termux binaries) IGNORES the
+# APT_CONFIG env var and instead reads Dir::Etc/main (apt.conf) from its
+# COMPILED-IN default dir (/data/data/com.termux/files/usr/etc/apt). On a
+# device that also has real Termux installed that means apt would read/write
+# the STOCK Termux package state and sources! Wrap every apt binary so it
+# always passes -c $PREFIX/etc/apt/dsh-apt.conf (which redirects Dir::Etc,
+# Dir::State, Dir::Cache, Dir::Bin::* to this fork's own prefix).
+REAL_APT_DIR="$PREFIX/bin/.real"
+mkdir -p "$REAL_APT_DIR"
+for APT_TOOL in apt apt-get apt-cache apt-config apt-mark; do
+  if [ -x "$PREFIX/bin/$APT_TOOL" ] && [ ! -e "$REAL_APT_DIR/$APT_TOOL" ]; then
+    mv "$PREFIX/bin/$APT_TOOL" "$REAL_APT_DIR/$APT_TOOL"
+  fi
+  cat > "$PREFIX/bin/$APT_TOOL" <<WRAP
+#!/system/bin/sh
+# dsh apt wrapper: force fork-specific config so apt never touches the
+# stock /data/data/com.termux paths (real Termux on the same device).
+CFG="$PREFIX/etc/apt/dsh-apt.conf"
+if [ -f "\$CFG" ]; then
+  exec "$REAL_APT_DIR/$APT_TOOL" -c "\$CFG" "\$@"
+else
+  exec "$REAL_APT_DIR/$APT_TOOL" "\$@"
+fi
+WRAP
+  chmod 755 "$PREFIX/bin/$APT_TOOL"
+done
 
 # Pre-select the Tsinghua mirror so pkg skips probing ~40 mirrors.
 TUNA_MIRROR="$PREFIX/etc/termux/mirrors/chinese_mainland/mirrors.tuna.tsinghua.edu.cn"

@@ -17,15 +17,21 @@
 set -e
 ROOT="${1:?rootfs dir}"
 MIRROR="${DSH_MIRROR:-http://mirrors.tuna.tsinghua.edu.cn/debian}"
-STEP="${DSH_STEP:-all}"
+STEP="${2:-${DSH_STEP:-all}}"
 
 bb() { "${DSH_BUSYBOX:-busybox}" "$@"; }
 run_proot() {
-  "${DSH_PROOT:-proot}" --link2symlink --sysvipc \
-    --kernel-release='\Linux\localhost\6.17.0-PRoot-Distro\#1 SMP PREEMPT_DYNAMIC Fri, 10 Oct 2025 00:00:00 +0000\aarch64\localdomain\-1\' \
-    -L --change-id=0:0 --rootfs="$ROOT" --cwd=/ \
-    --bind=/dev --bind=/proc --bind=/sys \
-    /bin/sh -c "$1"
+  export PROOT_TMP_DIR="${DSH_PROOT_TMP_DIR:-$ROOT/../cache}"
+  export PROOT_NO_SECCOMP=1
+  # Loader must live somewhere SELinux allows untrusted_app to exec
+  # (nativeLibraryDir). Without a valid PROOT_LOADER, proot's embedded
+  # loader lands in app_data_file and W^X blocks exec -> first
+  # execve("/bin/sh") fails with "Function not implemented".
+  if [ -n "$DSH_PROOT_LOADER" ]; then export PROOT_LOADER="$DSH_PROOT_LOADER"; fi
+  if [ -n "$DSH_PROOT_LOADER_32" ]; then export PROOT_LOADER_32="$DSH_PROOT_LOADER_32"; fi
+  "${DSH_PROOT:-proot}" -0 --link2symlink \
+    -r "$ROOT" -b /dev -b /proc -b /sys -w / \
+    /bin/sh -c "export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin; export HOME=/root TMPDIR=/tmp; $1"
 }
 
 do_unpack() {

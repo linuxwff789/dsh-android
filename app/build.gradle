@@ -324,6 +324,7 @@ def patchBootstrapZip(String arch) {
             "Acquire::https::CAInfo \"${P}/etc/tls/cert.pem\";\n",
         "bin/dsh-fix-scripts.sh": fixScript,
         "etc/apt/dsh-apt.conf":
+            "Dir::Etc \"${P}/etc/apt\";\n" +
             "Dir::Etc::main \"${P}/etc/apt/sources.list\";\n" +
             "Dir::Etc::parts \"${P}/etc/apt/apt.conf.d\";\n" +
             "Dir::Etc::sourceparts \"${P}/etc/apt/sources.list.d\";\n" +
@@ -339,6 +340,8 @@ def patchBootstrapZip(String arch) {
             "Dir::Bin::dpkg \"${P}/bin/dpkg\";\n" +
             "Dir::Bin::dpkg-deb \"${P}/bin/dpkg-deb\";\n" +
             "Dir::Bin::gpgv \"${P}/bin/gpgv\";\n" +
+            "Dir::Log \"${P}/var/log/apt\";\n" +
+            "DPkg::PATH \"${P}/bin:/system/bin\";\n" +
             "DPkg::Post-Invoke {\"${P}/bin/dsh-fix-scripts.sh\";};\n"
     ]
     def symlinksRewritten = false

@@ -77,8 +77,8 @@ public final class DshSetup {
         File libDir = new File(context.getFilesDir(), LIB_DIR);
         binDir.mkdirs();
         libDir.mkdirs();
-        String[] bins = {"proot", "xz", "busybox"};
-        String[] libs = {"libtalloc.so.2", "libandroid-shmem.so", "libandroid.so",
+        String[] bins = {"xz", "busybox"};
+        String[] libs = {"libandroid-shmem.so", "libandroid.so",
                 "liblzma.so.5", "libbusybox.so.1.38.0", "libandroid-selinux.so",
                 "libpcre2-8.so", "libtermux-exec.so"};
         for (String name : bins) {
@@ -87,9 +87,38 @@ public final class DshSetup {
         for (String name : libs) {
             extractAsset(context, "opt/dsh/lib/" + name, new File(libDir, name), false);
         }
+        ensureProotFromNativeLib(context, binDir);
         extractAsset(context, "opt/dsh/bootstrap.sh", new File(filesDsh(context), "bootstrap.sh"), true);
         extractAsset(context, "opt/dsh/pkglist.txt", new File(filesDsh(context), "pkglist.txt"), false);
         extractAsset(context, "opt/dsh/install.sh", new File(filesDsh(context), "install.sh"), true);
+    }
+
+    /**
+     * proot is compiled package-name-agnostic and shipped as jniLibs
+     * (libproot.so + libproot-loader.so + libproot-loader32.so) so that it
+     * lands in nativeLibraryDir where SELinux allows untrusted_app to exec it
+     * (app_data_file is W^X blocked on Android 10+). Copy it into filesDir/dsh
+     * so DshSetup's ProcessBuilder can use it, keeping the loader next to it.
+     */
+    public static void ensureProotFromNativeLib(Context context, File binDir) {
+        File nativeDir = new File(context.getApplicationInfo().nativeLibraryDir);
+        copyIfPresent(new File(nativeDir, "libproot.so"), new File(binDir, "proot"), true);
+        copyIfPresent(new File(nativeDir, "libproot-loader.so"), new File(binDir, "libproot-loader.so"), true);
+        copyIfPresent(new File(nativeDir, "libproot-loader32.so"), new File(binDir, "libproot-loader32.so"), true);
+    }
+
+    private static void copyIfPresent(File src, File dst, boolean executable) {
+        if (!src.exists()) return;
+        try (java.io.InputStream in = new java.io.FileInputStream(src);
+             java.io.OutputStream out = new java.io.FileOutputStream(dst)) {
+            byte[] buf = new byte[65536];
+            int n;
+            while ((n = in.read(buf)) != -1) out.write(buf, 0, n);
+        } catch (Exception e) {
+            Log.e(LOG_TAG, "copy failed: " + dst, e);
+            return;
+        }
+        if (executable) dst.setExecutable(true, true);
     }
 
     /**
@@ -121,6 +150,11 @@ public final class DshSetup {
         e.put("DSH_PKGLIST", new File(filesDsh, "pkglist.txt").getAbsolutePath());
         e.put("DSH_MIRROR", mirror);
         e.put("PROOT_TMP_DIR", cacheDir.getAbsolutePath());
+        // proot loader ships as jniLibs; point at the copied copy next to proot
+        e.put("PROOT_LOADER", new File(filesDsh, BIN_DIR + "/libproot-loader.so").getAbsolutePath());
+        e.put("PROOT_LOADER_32", new File(filesDsh, BIN_DIR + "/libproot-loader32.so").getAbsolutePath());
+        e.put("DSH_PROOT_LOADER", new File(filesDsh, BIN_DIR + "/libproot-loader.so").getAbsolutePath());
+        e.put("DSH_PROOT_LOADER_32", new File(filesDsh, BIN_DIR + "/libproot-loader32.so").getAbsolutePath());
         e.remove("LD_PRELOAD");
         pb.redirectErrorStream(true);
 
@@ -162,18 +196,12 @@ public final class DshSetup {
         File cacheDir = new File(filesDsh(context), "cache");
         cacheDir.mkdirs();
 
-        String kernelRelease = "\\Linux\\localhost\\6.17.0-PRoot-Distro"
-                + "\\#1 SMP PREEMPT_DYNAMIC Fri, 10 Oct 2025 00:00:00 +0000"
-                + "\\aarch64\\localdomain\\-1\\";
-
         ProcessBuilder pb = new ProcessBuilder(
                 new File(binDir, "proot").getAbsolutePath(),
-                "--link2symlink", "--sysvipc",
-                "--kernel-release=" + kernelRelease, "-L",
-                "--change-id=0:0",
-                "--rootfs=" + rootfs.getAbsolutePath(), "--cwd=/",
-                "--bind=/dev", "--bind=/proc", "--bind=/sys",
-                "--bind=/dev/urandom:/dev/random",
+                "-0", "--link2symlink",
+                "-r", rootfs.getAbsolutePath(),
+                "-b", "/dev", "-b", "/proc", "-b", "/sys",
+                "-w", "/",
                 "/bin/sh", "/opt/install-dsh.sh"
         );
         Map<String, String> e = pb.environment();
@@ -182,6 +210,8 @@ public final class DshSetup {
         e.put("HOME", "/root");
         e.put("TMPDIR", "/tmp");
         e.put("PROOT_TMP_DIR", cacheDir.getAbsolutePath());
+        e.put("PROOT_LOADER", new File(binDir, "libproot-loader.so").getAbsolutePath());
+        e.put("PROOT_LOADER_32", new File(binDir, "libproot-loader32.so").getAbsolutePath());
         e.remove("LD_PRELOAD");
         pb.redirectErrorStream(true);
 
@@ -231,6 +261,10 @@ public final class DshSetup {
                 + "export DSH_PKGLIST=\"" + new File(filesDsh, "pkglist.txt").getAbsolutePath() + "\"\n"
                 + "export DSH_MIRROR=\"" + mirror + "\"\n"
                 + "export PROOT_TMP_DIR=\"" + cacheDir.getAbsolutePath() + "\"\n"
+                + "export PROOT_LOADER=\"" + new File(binDir, "libproot-loader.so").getAbsolutePath() + "\"\n"
+                + "export PROOT_LOADER_32=\"" + new File(binDir, "libproot-loader32.so").getAbsolutePath() + "\"\n"
+                + "export DSH_PROOT_LOADER=\"" + new File(binDir, "libproot-loader.so").getAbsolutePath() + "\"\n"
+                + "export DSH_PROOT_LOADER_32=\"" + new File(binDir, "libproot-loader32.so").getAbsolutePath() + "\"\n"
                 + "unset LD_PRELOAD\n"
                 + "echo '=== [1/2] DSH bootstrap: clean Debian minbase ==='\n"
                 + "\"" + busybox + "\" sh \"" + new File(filesDsh, "bootstrap.sh").getAbsolutePath()
@@ -267,10 +301,9 @@ public final class DshSetup {
         }
         copyFile(new File(filesDsh, "install.sh"), guestInstaller, true);
 
-        String kernelRelease = "\\Linux\\localhost\\6.17.0-PRoot-Distro"
-                + "\\#1 SMP PREEMPT_DYNAMIC Fri, 10 Oct 2025 00:00:00 +0000"
-                + "\\aarch64\\localdomain\\-1\\";
         String proot = new File(binDir, "proot").getAbsolutePath();
+        String loader = new File(binDir, "libproot-loader.so").getAbsolutePath();
+        String loader32 = new File(binDir, "libproot-loader32.so").getAbsolutePath();
 
         String script = "#!/system/bin/sh\n"
                 + "# visible installer wrapper (generated by DshSetup)\n"
@@ -279,13 +312,19 @@ public final class DshSetup {
                 + "export HOME=/root\n"
                 + "export TMPDIR=/tmp\n"
                 + "export PROOT_TMP_DIR=\"" + cacheDir.getAbsolutePath() + "\"\n"
+                + "export PROOT_LOADER=\"" + loader + "\"\n"
+                + "export PROOT_LOADER_32=\"" + loader32 + "\"\n"
                 + "unset LD_PRELOAD\n"
                 + "echo '=== [2/2] DSH installer: node + deepseek-harness (China mirrors) ==='\n"
-                + "\"" + proot + "\" --link2symlink --sysvipc"
-                + " --kernel-release=\"" + kernelRelease + "\" -L --change-id=0:0"
-                + " --rootfs=\"" + rootfs.getAbsolutePath() + "\" --cwd=/"
-                + " --bind=/dev --bind=/proc --bind=/sys --bind=/dev/urandom:/dev/random"
+                + "\"" + proot + "\" -0 --link2symlink"
+                + " -r \"" + rootfs.getAbsolutePath() + "\""
+                + " -b /dev -b /proc -b /sys -w /"
                 + " /bin/sh /opt/install-dsh.sh\n"
+                + "rc=$?\n"
+                + "echo \"=== installer exit: $rc ===\"\n"
+                + "echo \"$rc\" > \"" + new File(filesDsh, ".install-exit").getAbsolutePath() + "\"\n"
+                + "touch \"" + new File(context.getFilesDir(), INSTALL_DONE).getAbsolutePath() + "\"\n"
+                + "exit $rc\n";
                 + "rc=$?\n"
                 + "echo \"=== installer exit: $rc ===\"\n"
                 + "echo \"$rc\" > \"" + new File(filesDsh, ".install-exit").getAbsolutePath() + "\"\n"

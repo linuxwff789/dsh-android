@@ -11,3 +11,4 @@ dist/
 # keystore private material (only the .p12 is committed for CI signing)
 keystore/key.pem
 keystore/cert.pem
+.gradle/
