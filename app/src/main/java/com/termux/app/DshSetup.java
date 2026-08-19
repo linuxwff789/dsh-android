@@ -87,6 +87,15 @@ public final class DshSetup {
         for (String name : libs) {
             extractAsset(context, "opt/dsh/lib/" + name, new File(libDir, name), false);
         }
+        // The stock termux bootstrap bash has /data/data/com.termux baked in
+        // as its sysconfdir, so `bash -l` sources the real termux app's
+        // profile and every login shell aborts with "Permission denied"
+        // (SELinux denies cross-app reads). Ship a package-name-agnostic
+        // build (resolves $PREFIX at runtime) and overwrite the bootstrap's
+        // copy on every boot so a TermuxInstaller re-extract can't regress
+        // it. MUST be repeated: bootstrap reinstall happens outside DshSetup.
+        extractAsset(context, "opt/dsh/bin/bash",
+            new File(context.getFilesDir(), "usr/bin/bash"), true);
         ensureProotFromNativeLib(context, binDir);
         extractAsset(context, "opt/dsh/bootstrap.sh", new File(filesDsh(context), "bootstrap.sh"), true);
         extractAsset(context, "opt/dsh/pkglist.txt", new File(filesDsh(context), "pkglist.txt"), false);
